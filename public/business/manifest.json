@@ -1,0 +1,9 @@
+{
+  "name": "NEXUS Business Tracker",
+  "short_name": "Business",
+  "start_url": "/business/",
+  "display": "standalone",
+  "background_color": "#F6F8F8",
+  "theme_color": "#1F3864",
+  "icons": []
+}

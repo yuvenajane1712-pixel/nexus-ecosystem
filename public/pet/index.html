@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>Pet Care Tracker · NEXUS</title>
+<link rel="stylesheet" href="/style.css" />
+<link rel="manifest" href="/pet/manifest.json" />
+<meta name="theme-color" content="#1F3864" />
+</head>
+<body>
+  <div class="topbar">
+    <span><span class="sync-dot" id="syncDot"></span>Pet Care Tracker</span>
+    <select id="petSelect" style="width:auto;margin:0;padding:4px 8px;font-size:13px;">
+      <option value="馒头 (Mantou)">馒头 Mantou</option>
+      <option value="Cat 2">Cat 2</option>
+      <option value="Dog">Dog</option>
+    </select>
+  </div>
+
+  <main>
+    <div class="section-title">Recent Logs</div>
+    <div id="logsList"><div class="empty">No logs yet</div></div>
+  </main>
+
+  <button class="fab" id="fabBtn">+</button>
+
+  <div class="bottomnav">
+    <a href="/"><span class="ic">🏠</span>Home</a>
+    <a href="/business/"><span class="ic">💼</span>Business</a>
+    <a href="/health/"><span class="ic">🩺</span>Health</a>
+    <a href="/pet/" class="active"><span class="ic">🐾</span>Pet</a>
+    <a href="/budget/"><span class="ic">💰</span>Budget</a>
+  </div>
+
+  <div class="sheet-overlay" id="logSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('logSheet')">Close ✕</div>
+      <h2>New Pet Log</h2>
+      <label>Type</label>
+      <select id="l_type">
+        <option value="diet">Diet / feeding</option>
+        <option value="health">Health metric (weight, stool, HR)</option>
+        <option value="supplement">Supplement / TCM</option>
+        <option value="grocery">Grocery purchase (auto-posts to Budget)</option>
+      </select>
+      <label>Title</label>
+      <input id="l_title" placeholder="e.g. weight / stool / dry food" />
+      <label>Value / notes</label>
+      <input id="l_value" placeholder="e.g. 3.8kg / healthy / 40g Nourse" />
+      <label>Cost RMB (if grocery)</label>
+      <input id="l_cost" type="number" placeholder="35" />
+      <button onclick="submitLog()">Save Log</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/shared.js"></script>
+  <script src="/pet/app.js"></script>
+</body>
+</html>

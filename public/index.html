@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>NEXUS Ecosystem</title>
+<link rel="stylesheet" href="/style.css" />
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#1F3864" />
+</head>
+<body>
+  <div class="topbar">
+    <span><span class="sync-dot" id="syncDot"></span>NEXUS Ecosystem</span>
+    <small>shared · realtime</small>
+  </div>
+  <main>
+    <div class="section-title">Your 4 Workbenches</div>
+    <div class="app-launcher">
+      <a class="app-tile" href="/business/">
+        <div class="emoji">💼</div>
+        <div><div class="name">Business Tracker</div><div class="desc">Nadylan sourcing · Guangzhou Mate tours</div></div>
+      </a>
+      <a class="app-tile" href="/health/">
+        <div class="emoji">🩺</div>
+        <div><div class="name">Personal Health Tracker</div><div class="desc">Nadine & Yuvena — diet, workout, metrics</div></div>
+      </a>
+      <a class="app-tile" href="/pet/">
+        <div class="emoji">🐾</div>
+        <div><div class="name">Pet Care Tracker</div><div class="desc">Diet, health & supplement logs</div></div>
+      </a>
+      <a class="app-tile" href="/budget/">
+        <div class="emoji">💰</div>
+        <div><div class="name">Household Budget & Savings</div><div class="desc">Caps, goals, wishlist</div></div>
+      </a>
+    </div>
+    <div class="section-title">Status</div>
+    <div class="card">
+      <div class="row"><span class="label">Server</span><span class="val" id="pingStatus">checking…</span></div>
+      <div class="row"><span class="label">All apps share</span><span class="val">1 live database</span></div>
+    </div>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/shared.js"></script>
+  <script>
+    fetch("/api/ping").then(r => r.json()).then(d => {
+      document.getElementById("pingStatus").textContent = "online ✓";
+    }).catch(() => {
+      document.getElementById("pingStatus").textContent = "offline";
+    });
+  </script>
+</body>
+</html>

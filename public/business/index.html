@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>Business Tracker · NEXUS</title>
+<link rel="stylesheet" href="/style.css" />
+<link rel="manifest" href="/business/manifest.json" />
+<meta name="theme-color" content="#1F3864" />
+</head>
+<body>
+  <div class="topbar">
+    <span><span class="sync-dot" id="syncDot"></span>Business Tracker</span>
+    <small><a href="/" style="color:white;">home</a></small>
+  </div>
+
+  <main>
+    <div class="section-title">This Month</div>
+    <div class="card">
+      <div class="row"><span class="label">Nadylan + Tours net profit</span><span class="val" id="profitSum">—</span></div>
+      <div class="row"><span class="label">Open orders</span><span class="val" id="openOrders">—</span></div>
+      <div class="row"><span class="label">Open tours</span><span class="val" id="openTours">—</span></div>
+    </div>
+
+    <div class="section-title">Nadylan Orders</div>
+    <div id="ordersList"><div class="empty">No orders yet</div></div>
+
+    <div class="section-title">Guangzhou Mate Tours</div>
+    <div id="toursList"><div class="empty">No tours yet</div></div>
+  </main>
+
+  <button class="fab" id="fabBtn">+</button>
+
+  <div class="bottomnav">
+    <a href="/" class="ic-wrap"><span class="ic">🏠</span>Home</a>
+    <a href="/business/" class="active"><span class="ic">💼</span>Business</a>
+    <a href="/health/"><span class="ic">🩺</span>Health</a>
+    <a href="/pet/"><span class="ic">🐾</span>Pet</a>
+    <a href="/budget/"><span class="ic">💰</span>Budget</a>
+  </div>
+
+  <!-- New Order sheet -->
+  <div class="sheet-overlay" id="orderSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('orderSheet')">Close ✕</div>
+      <h2>New Nadylan Order</h2>
+      <label>Buyer name</label>
+      <input id="o_buyer" placeholder="e.g. PT Sumber Jaya" />
+      <label>Product summary</label>
+      <input id="o_summary" placeholder="e.g. 200x phone cases" />
+      <label>Product cost (RMB)</label>
+      <input id="o_cost" type="number" placeholder="10000" />
+      <div class="grid2">
+        <div>
+          <label>Order value >50k? OEM/rebrand? First-time?</label>
+          <select id="o_flags">
+            <option value="firsttime">First-time client</option>
+            <option value="recurring">Recurring client</option>
+            <option value="oem">OEM/ODM or rebrand</option>
+            <option value="bulk">Bulk (auto if >50k)</option>
+          </select>
+        </div>
+        <div>
+          <label>Service fee % (auto-suggested)</label>
+          <input id="o_fee" type="number" placeholder="10" />
+        </div>
+      </div>
+      <label>Logistics cost (RMB)</label>
+      <input id="o_logistics" type="number" placeholder="800" />
+      <label>Urgency (1 low – 5 very urgent)</label>
+      <input id="o_urgency" type="number" min="1" max="5" value="1" />
+      <label>Status</label>
+      <select id="o_status">
+        <option value="open">Open</option>
+        <option value="completed">Completed (posts profit to Budget)</option>
+      </select>
+      <button onclick="submitOrder()">Save Order</button>
+    </div>
+  </div>
+
+  <!-- New Tour sheet -->
+  <div class="sheet-overlay" id="tourSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('tourSheet')">Close ✕</div>
+      <h2>New Tour</h2>
+      <label>Type</label>
+      <select id="t_type">
+        <option value="bigbus">Big Bus Group Tour</option>
+        <option value="private">Private Tour</option>
+      </select>
+      <label>Tier</label>
+      <select id="t_tier">
+        <option value="Backpackers Tour|13000000">Backpackers Tour — 13M IDR/pax</option>
+        <option value="High School Graduate Tour|17000000">High School Graduate — 17M IDR/pax</option>
+        <option value="Corporate Business Tour|20000000">Corporate Business — 20M IDR/pax</option>
+        <option value="High Season Tour|25000000">High Season — 25M IDR/pax</option>
+        <option value="Leisure Private Tour|800000">Leisure Private — 800K IDR/day</option>
+        <option value="Business Concierge Private Tour|1500000">Business Concierge — 1.5M IDR/day</option>
+      </select>
+      <label id="t_qtyLabel">Pax count</label>
+      <input id="t_qty" type="number" placeholder="30" />
+      <label>Total cost (IDR)</label>
+      <input id="t_cost" type="number" placeholder="200000000" />
+      <label>Status</label>
+      <select id="t_status">
+        <option value="open">Open</option>
+        <option value="completed">Completed (posts margin to Budget)</option>
+      </select>
+      <button onclick="submitTour()">Save Tour</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/shared.js"></script>
+  <script src="/business/app.js"></script>
+</body>
+</html>

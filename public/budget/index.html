@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>Budget Manager · NEXUS</title>
+<link rel="stylesheet" href="/style.css" />
+<link rel="manifest" href="/budget/manifest.json" />
+<meta name="theme-color" content="#1F3864" />
+</head>
+<body>
+  <div class="topbar">
+    <span><span class="sync-dot" id="syncDot"></span>Household Budget</span>
+    <small>shared</small>
+  </div>
+
+  <main>
+    <div class="card">
+      <h3>This Month vs. 5,000 RMB Cap</h3>
+      <div class="row"><span class="label" id="capLabel">Spent</span><span class="val" id="capVal">—</span></div>
+      <div class="progress" id="capProgress"><div style="width:0%"></div></div>
+    </div>
+
+    <div class="card">
+      <h3>Category Caps</h3>
+      <div id="categoryCaps"></div>
+    </div>
+
+    <div class="card">
+      <h3>Goals</h3>
+      <div class="row"><span class="label">Business revenue → 5B IDR (Dec 2026)</span><span class="val" id="goalPct">—</span></div>
+      <div class="progress"><div id="goalBar" style="width:0%"></div></div>
+      <div class="row" style="margin-top:10px;"><span class="label">Living reserve runway</span><span class="val" id="runway">—</span></div>
+    </div>
+
+    <div class="section-title">Recent Transactions</div>
+    <div id="txList"><div class="empty">No transactions yet</div></div>
+
+    <div class="section-title">Wishlist</div>
+    <div id="wishlist"><div class="empty">Nothing on the wishlist yet</div></div>
+  </main>
+
+  <button class="fab" id="fabBtn">+</button>
+
+  <div class="bottomnav">
+    <a href="/"><span class="ic">🏠</span>Home</a>
+    <a href="/business/"><span class="ic">💼</span>Business</a>
+    <a href="/health/"><span class="ic">🩺</span>Health</a>
+    <a href="/pet/"><span class="ic">🐾</span>Pet</a>
+    <a href="/budget/" class="active"><span class="ic">💰</span>Budget</a>
+  </div>
+
+  <div class="sheet-overlay" id="txSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('txSheet')">Close ✕</div>
+      <h2>Quick Add</h2>
+      <label>Kind</label>
+      <select id="tx_kind">
+        <option value="expense">Expense</option>
+        <option value="income">Income</option>
+      </select>
+      <label>Category</label>
+      <select id="tx_category">
+        <option>Rent</option>
+        <option>Human Groceries</option>
+        <option>Pet Supplies & Groceries</option>
+        <option>Utilities</option>
+        <option>Transport</option>
+        <option>Entertainment</option>
+        <option>Business Costs</option>
+        <option>Reserve Draw</option>
+        <option>Nadylan Trade Profit</option>
+        <option>Guangzhou Mate Tour Revenue</option>
+        <option>Social Media Revenue</option>
+        <option>Other</option>
+      </select>
+      <label>Amount (RMB)</label>
+      <input id="tx_amount" type="number" placeholder="50" />
+      <label>Note</label>
+      <input id="tx_note" placeholder="optional" />
+      <button onclick="submitTx()">Save</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="wishSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('wishSheet')">Close ✕</div>
+      <h2>Add Wishlist Item</h2>
+      <label>Item</label>
+      <input id="w_item" placeholder="e.g. new laptop" />
+      <label>Price (RMB)</label>
+      <input id="w_price" type="number" placeholder="6000" />
+      <label>Priority (higher = more important)</label>
+      <input id="w_priority" type="number" placeholder="1" />
+      <button onclick="submitWish()">Save</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/shared.js"></script>
+  <script src="/budget/app.js"></script>
+</body>
+</html>
