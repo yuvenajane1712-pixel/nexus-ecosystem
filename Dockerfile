@@ -10,7 +10,6 @@ RUN npm install --omit=dev
 COPY . .
 
 # persist the SQLite db in a volume if your platform supports it
-VOLUME ["/app/data"]
 ENV PORT=3000
 EXPOSE 3000
 
