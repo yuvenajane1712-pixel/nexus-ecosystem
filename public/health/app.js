@@ -15,6 +15,9 @@ async function refreshAll() {
   document.getElementById("calToday").textContent = summary.total_calories + " kcal";
   document.getElementById("latestWeight").textContent = summary.latest_weight || "—";
 
+  const insight = await NEXUS.get(`/api/health/insight/${user}`);
+  document.getElementById("insightBox").innerHTML = insight.insights.map(i => `• ${i}`).join("<br>");
+
   const logs = await NEXUS.get(`/api/health/logs?user_name=${encodeURIComponent(user)}`);
   const el = document.getElementById("logsList");
   if (!logs.length) { el.innerHTML = '<div class="empty">No logs yet</div>'; return; }

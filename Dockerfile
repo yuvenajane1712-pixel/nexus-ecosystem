@@ -9,7 +9,9 @@ RUN npm install --omit=dev
 
 COPY . .
 
-# persist the SQLite db in a volume if your platform supports it
+# Note: persistent storage is handled via Railway's Volumes UI + the DB_PATH
+# environment variable (e.g. DB_PATH=/app/data/nexus.db) rather than a
+# Dockerfile VOLUME directive, since Railway's builder doesn't support VOLUME.
 ENV PORT=3000
 EXPOSE 3000
 

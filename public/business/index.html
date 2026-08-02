@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
 <title>Business Tracker · NEXUS</title>
 <link rel="stylesheet" href="/style.css" />
+<link rel="stylesheet" href="/business/business.css" />
 <link rel="manifest" href="/business/manifest.json" />
 <meta name="theme-color" content="#1F3864" />
 </head>
@@ -14,36 +15,120 @@
     <small><a href="/" style="color:white;">home</a></small>
   </div>
 
+  <div class="subnav" id="subnav">
+    <button class="subnav-btn active" data-tab="nadylan">Nadylan A</button>
+    <button class="subnav-btn" data-tab="trackb">Nadylan B</button>
+    <button class="subnav-btn" data-tab="crm">CRM</button>
+    <button class="subnav-btn" data-tab="tours">Tours</button>
+    <button class="subnav-btn" data-tab="social">Social</button>
+    <button class="subnav-btn" data-tab="indocha">Indocha</button>
+    <button class="subnav-btn" data-tab="blockchain">Blockchain</button>
+  </div>
+
   <main>
-    <div class="section-title">This Month</div>
-    <div class="card">
-      <div class="row"><span class="label">Nadylan + Tours net profit</span><span class="val" id="profitSum">—</span></div>
-      <div class="row"><span class="label">Open orders</span><span class="val" id="openOrders">—</span></div>
-      <div class="row"><span class="label">Open tours</span><span class="val" id="openTours">—</span></div>
-    </div>
+    <!-- ===== TAB: Nadylan Track A ===== -->
+    <section class="tab-panel" id="tab-nadylan">
+      <div class="card">
+        <div class="row"><span class="label">Nadylan + Tours net profit</span><span class="val" id="profitSum">—</span></div>
+        <div class="row"><span class="label">Open orders</span><span class="val" id="openOrders">—</span></div>
+      </div>
+      <div class="section-title">Nadylan Orders (Track A — China → Indonesia)</div>
+      <a class="export-link" href="/api/export/business/orders.xlsx">⬇ Export all orders (Excel)</a>
+      <div id="ordersList"><div class="empty">No orders yet</div></div>
+    </section>
 
-    <div class="section-title">Nadylan Orders</div>
-    <div id="ordersList"><div class="empty">No orders yet</div></div>
+    <!-- ===== TAB: Nadylan Track B ===== -->
+    <section class="tab-panel hidden" id="tab-trackb">
+      <div class="card">
+        <div class="row"><span class="label">Track B open orders</span><span class="val" id="trackbOpen">—</span></div>
+        <button class="small secondary" onclick="seedCatalog()">Load default product catalog</button>
+      </div>
+      <div class="section-title">Product Catalog (Indonesia → China)</div>
+      <div id="catalogList"><div class="empty">No catalog items — tap "Load default product catalog"</div></div>
+      <div class="section-title">Track B Orders</div>
+      <div id="trackbOrdersList"><div class="empty">No orders yet</div></div>
+    </section>
 
-    <div class="section-title">Guangzhou Mate Tours</div>
-    <div id="toursList"><div class="empty">No tours yet</div></div>
+    <!-- ===== TAB: CRM ===== -->
+    <section class="tab-panel hidden" id="tab-crm">
+      <input id="crm_search" placeholder="🔍 Search A–Z by name..." oninput="loadCRM()" />
+      <div class="grid2" style="margin-bottom:10px;">
+        <button class="small secondary" onclick="filterCRM('')">All</button>
+        <button class="small secondary" onclick="filterCRM('buyer')">Buyers only</button>
+      </div>
+      <div id="crmList"><div class="empty">No contacts yet</div></div>
+    </section>
+
+    <!-- ===== TAB: Tours ===== -->
+    <section class="tab-panel hidden" id="tab-tours">
+      <div class="card">
+        <div class="row"><span class="label">Open tours</span><span class="val" id="openTours">—</span></div>
+      </div>
+      <div class="section-title">Guangzhou Mate Tours</div>
+      <div id="toursList"><div class="empty">No tours yet</div></div>
+      <div class="section-title">AI Itinerary Generator</div>
+      <div class="card">
+        <label>Destinations (comma separated)</label>
+        <input id="it_destinations" placeholder="Canton Tower, Shamian Island, Chimelong" />
+        <label>Days</label>
+        <input id="it_days" type="number" placeholder="2" />
+        <button onclick="generateItinerary()">Generate Itinerary</button>
+        <div id="itineraryResult"></div>
+      </div>
+    </section>
+
+    <!-- ===== TAB: Social ===== -->
+    <section class="tab-panel hidden" id="tab-social">
+      <div class="card">
+        <label>Account</label>
+        <select id="s_account">
+          <option>Yuvena</option><option>Nadine</option><option>Fur Babies</option>
+          <option>Nadylan Business</option><option>Guangzhou Mate</option><option>Indocha Cooking</option>
+        </select>
+        <label>Topic / keyword</label>
+        <input id="s_topic" placeholder="e.g. weight loss journey update" />
+        <button onclick="generateScript()">Generate Script (AI-style)</button>
+        <div id="scriptResult"></div>
+      </div>
+      <div class="section-title">6-Month Content Calendar</div>
+      <button class="secondary" onclick="seedCalendar()" style="margin-bottom:10px;">Auto-fill 6-month calendar</button>
+      <div id="calendarList"><div class="empty">No posts scheduled yet</div></div>
+    </section>
+
+    <!-- ===== TAB: Indocha ===== -->
+    <section class="tab-panel hidden" id="tab-indocha">
+      <div class="section-title">Grocery Price Comparison</div>
+      <div id="pricesList"><div class="empty">No prices logged yet</div></div>
+      <div class="section-title">Recipe Database ("Menu Blockchain")</div>
+      <div id="recipesList"><div class="empty">No recipes yet</div></div>
+    </section>
+
+    <!-- ===== TAB: Blockchain ===== -->
+    <section class="tab-panel hidden" id="tab-blockchain">
+      <div class="card">
+        <div class="row"><span class="label">Overall learning progress</span><span class="val" id="bcProgress">—</span></div>
+        <div class="progress"><div id="bcProgressBar" style="width:0%"></div></div>
+      </div>
+      <div id="bcList"><div class="empty">No entries yet</div></div>
+    </section>
   </main>
 
   <button class="fab" id="fabBtn">+</button>
 
   <div class="bottomnav">
-    <a href="/" class="ic-wrap"><span class="ic">🏠</span>Home</a>
+    <a href="/"><span class="ic">🏠</span>Home</a>
     <a href="/business/" class="active"><span class="ic">💼</span>Business</a>
     <a href="/health/"><span class="ic">🩺</span>Health</a>
     <a href="/pet/"><span class="ic">🐾</span>Pet</a>
     <a href="/budget/"><span class="ic">💰</span>Budget</a>
   </div>
 
-  <!-- New Order sheet -->
+  <!-- ===== SHEETS ===== -->
+
   <div class="sheet-overlay" id="orderSheet">
     <div class="sheet">
       <div class="close" onclick="NEXUS.closeSheet('orderSheet')">Close ✕</div>
-      <h2>New Nadylan Order</h2>
+      <h2>New Nadylan Order (Track A)</h2>
       <label>Buyer name</label>
       <input id="o_buyer" placeholder="e.g. PT Sumber Jaya" />
       <label>Product summary</label>
@@ -52,7 +137,7 @@
       <input id="o_cost" type="number" placeholder="10000" />
       <div class="grid2">
         <div>
-          <label>Order value >50k? OEM/rebrand? First-time?</label>
+          <label>Client type</label>
           <select id="o_flags">
             <option value="firsttime">First-time client</option>
             <option value="recurring">Recurring client</option>
@@ -78,7 +163,6 @@
     </div>
   </div>
 
-  <!-- New Tour sheet -->
   <div class="sheet-overlay" id="tourSheet">
     <div class="sheet">
       <div class="close" onclick="NEXUS.closeSheet('tourSheet')">Close ✕</div>
@@ -107,6 +191,133 @@
         <option value="completed">Completed (posts margin to Budget)</option>
       </select>
       <button onclick="submitTour()">Save Tour</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="trackbSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('trackbSheet')">Close ✕</div>
+      <h2>New Track B Order</h2>
+      <label>Chinese buyer name</label>
+      <input id="b_buyer" placeholder="e.g. Guangzhou Coffee Co" />
+      <label>Product summary</label>
+      <input id="b_summary" placeholder="e.g. Gayo Arabica 1 ton" />
+      <label>Profit model</label>
+      <select id="b_model" onchange="toggleProfitModel()">
+        <option value="margin">Margin (cost vs selling price)</option>
+        <option value="broker">Broker fee (% of selling price)</option>
+      </select>
+      <div id="b_marginFields">
+        <label>Cost price (RMB)</label>
+        <input id="b_cost" type="number" placeholder="30000" />
+      </div>
+      <label>Selling price (RMB)</label>
+      <input id="b_sell" type="number" placeholder="38000" />
+      <div id="b_brokerFields" class="hidden">
+        <label>Broker fee rate (%)</label>
+        <input id="b_feerate" type="number" placeholder="8" />
+      </div>
+      <label>Freight (RMB)</label>
+      <input id="b_freight" type="number" placeholder="0" />
+      <label>Insurance (RMB)</label>
+      <input id="b_insurance" type="number" placeholder="0" />
+      <label>VAT (RMB)</label>
+      <input id="b_vat" type="number" placeholder="0" />
+      <label>Misc fees (RMB)</label>
+      <input id="b_misc" type="number" placeholder="0" />
+      <label>Payment method</label>
+      <input id="b_payment" placeholder="e.g. Bank transfer" />
+      <label>Status</label>
+      <select id="b_status">
+        <option value="open">Open</option>
+        <option value="completed">Completed (posts profit to Budget)</option>
+      </select>
+      <button onclick="submitTrackB()">Save Order</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="crmSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('crmSheet')">Close ✕</div>
+      <h2>New CRM Contact</h2>
+      <label>Type</label>
+      <select id="c_kind">
+        <option value="buyer">Buyer</option>
+        <option value="supplier">Supplier</option>
+        <option value="indo_supplier">Indonesian Supplier (Track B)</option>
+        <option value="chinese_buyer">Chinese Buyer (Track B)</option>
+      </select>
+      <label>Name</label>
+      <input id="c_name" placeholder="Company / person name" />
+      <label>Contact (WeChat / WhatsApp / phone / address)</label>
+      <input id="c_contact" placeholder="WA: 08123456789" />
+      <label>Tier / trust rating</label>
+      <input id="c_tier" placeholder="e.g. big fish, Alibaba Gold Supplier" />
+      <label>Certificates (Track B suppliers)</label>
+      <input id="c_certs" placeholder="Form E, phytosanitary" />
+      <button onclick="submitCRM()">Save Contact</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="priceSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('priceSheet')">Close ✕</div>
+      <h2>Log Grocery Price</h2>
+      <label>Item</label>
+      <input id="p_item" placeholder="e.g. chicken breast" />
+      <label>Channel</label>
+      <select id="p_channel">
+        <option>Sam's Club</option><option>7Fresh</option><option>Meituan</option>
+        <option>Pinduoduo</option><option>Wet Market</option><option>Other</option>
+      </select>
+      <label>Unit price (RMB)</label>
+      <input id="p_price" type="number" placeholder="18" />
+      <label>Delivery/commute fee (RMB)</label>
+      <input id="p_delivery" type="number" placeholder="0" />
+      <button onclick="submitPrice()">Save Price</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="recipeSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('recipeSheet')">Close ✕</div>
+      <h2>New Recipe</h2>
+      <label>Name</label>
+      <input id="r_name" placeholder="e.g. Nasi Goreng" />
+      <label>Category</label>
+      <select id="r_category"><option value="food">Food</option><option value="beverage">Beverage</option><option value="baking">Baking</option></select>
+      <label>Ingredients (name:cost, comma separated)</label>
+      <input id="r_ingredients" placeholder="rice:5, egg:2, soy sauce:1" />
+      <label>Instructions</label>
+      <textarea id="r_instructions" rows="3" placeholder="Step by step..."></textarea>
+      <label>Prep time</label>
+      <input id="r_preptime" placeholder="15 min" />
+      <label>Shelf life</label>
+      <input id="r_shelflife" placeholder="2 days refrigerated" />
+      <label>Storage method</label>
+      <input id="r_storage" placeholder="Airtight container, fridge" />
+      <button onclick="submitRecipe()">Save Recipe</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="bcSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('bcSheet')">Close ✕</div>
+      <h2>New Learning Log Entry</h2>
+      <label>Section</label>
+      <select id="bc_section">
+        <option value="cost">Startup cost estimation</option>
+        <option value="legal">Legal / technical requirement</option>
+        <option value="notes">Learning notes</option>
+        <option value="custom">Custom research</option>
+      </select>
+      <label>Title</label>
+      <input id="bc_title" placeholder="e.g. Entity registration research" />
+      <label>Content / notes</label>
+      <textarea id="bc_content" rows="4" placeholder="What did you learn / research..."></textarea>
+      <label>Progress % (this item)</label>
+      <input id="bc_progress" type="number" min="0" max="100" placeholder="30" />
+      <button onclick="submitBlockchain()">Save Entry</button>
     </div>
   </div>
 

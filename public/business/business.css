@@ -1,0 +1,14 @@
+.subnav {
+  display: flex; overflow-x: auto; gap: 6px; padding: 10px 12px;
+  background: white; border-bottom: 1px solid #E5E7EB; position: sticky; top: 54px; z-index: 9;
+  -webkit-overflow-scrolling: touch;
+}
+.subnav-btn {
+  flex: 0 0 auto; background: #F0F2F2; color: #444; border: none; border-radius: 20px;
+  padding: 7px 14px; font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+.subnav-btn.active { background: #0F6E6E; color: white; }
+.tab-panel.hidden { display: none; }
+.hidden { display: none !important; }
+.mini-tag { display: inline-block; background: #EAF1F1; color: #0F6E6E; font-size: 11px; padding: 2px 8px; border-radius: 20px; margin-left: 6px; }
+.export-link { display: inline-block; margin-top: 6px; font-size: 12px; color: #0F6E6E; font-weight: 600; text-decoration: none; }

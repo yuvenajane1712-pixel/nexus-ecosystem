@@ -3,6 +3,11 @@ document.getElementById("petSelect").addEventListener("change", refreshAll);
 
 async function refreshAll() {
   const pet = document.getElementById("petSelect").value;
+
+  const insight = await NEXUS.get(`/api/pet/insight/${encodeURIComponent(pet)}`);
+  const statusIcon = insight.status === "healthy" ? "✅" : (insight.status === "needs attention" ? "⚠️" : "ℹ️");
+  document.getElementById("statusBox").innerHTML = `${statusIcon} <strong>${insight.status}</strong><br>${insight.note}`;
+
   const logs = await NEXUS.get(`/api/pet/logs?pet_name=${encodeURIComponent(pet)}`);
   const el = document.getElementById("logsList");
   if (!logs.length) { el.innerHTML = '<div class="empty">No logs yet</div>'; return; }

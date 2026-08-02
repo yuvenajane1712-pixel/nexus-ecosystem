@@ -21,6 +21,13 @@ app.use("/api/business", require("./routes/business")(io));
 app.use("/api/health", require("./routes/health")(io));
 app.use("/api/pet", require("./routes/pet")(io));
 app.use("/api/budget", require("./routes/budget")(io));
+app.use("/api/crm", require("./routes/crm")(io));
+app.use("/api/trackb", require("./routes/trackb")(io));
+app.use("/api/indocha", require("./routes/indocha")(io));
+app.use("/api/blockchain", require("./routes/blockchain")(io));
+app.use("/api/social", require("./routes/social")(io));
+app.use("/api/itinerary", require("./routes/itinerary")(io));
+app.use("/api/export", require("./routes/export")());
 
 app.get("/api/ping", (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 

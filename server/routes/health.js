@@ -55,5 +55,49 @@ module.exports = function (io) {
     res.json({ total_calories: rows.total_calories, latest_weight: latestWeight ? latestWeight.value : null });
   });
 
+  // rule-based "AI" insight: compares last 3 days of logs to each user's embedded targets
+  router.get("/insight/:user", (req, res) => {
+    const user = req.params.user;
+    const targets = {
+      Yuvena: { calorieTarget: 1600, note: "no red meat, low glycemic load, high potassium priority" },
+      Nadine: { calorieTarget: 1500, note: "gluten/dairy/soy-free, thyroid-supportive, moderate protein" },
+    };
+    const t = targets[user] || targets.Yuvena;
+
+    const last3days = db.prepare(`
+      SELECT date(created_at) d, SUM(calories) cals, COUNT(*) n
+      FROM health_logs WHERE user_name=? AND log_type='diet' AND created_at >= date('now','-3 days')
+      GROUP BY date(created_at)
+    `).all(user);
+
+    const workoutDays = db.prepare(`
+      SELECT COUNT(DISTINCT date(created_at)) c FROM health_logs
+      WHERE user_name=? AND log_type='workout' AND created_at >= date('now','-7 days')
+    `).get(user).c;
+
+    const insights = [];
+    const avgCal = last3days.length ? last3days.reduce((s, d) => s + (d.cals || 0), 0) / last3days.length : 0;
+
+    if (avgCal === 0) {
+      insights.push("No diet logs in the last 3 days — log meals to get a real read on intake.");
+    } else if (avgCal < t.calorieTarget * 0.7) {
+      insights.push(`Average intake (${Math.round(avgCal)} kcal) is well under your ${t.calorieTarget} kcal target — make sure you're not under-eating.`);
+    } else if (avgCal > t.calorieTarget * 1.2) {
+      insights.push(`Average intake (${Math.round(avgCal)} kcal) is above your ${t.calorieTarget} kcal target — worth reviewing portions this week.`);
+    } else {
+      insights.push(`Average intake (${Math.round(avgCal)} kcal) is tracking close to your ${t.calorieTarget} kcal target — good consistency.`);
+    }
+
+    if (workoutDays < 3) {
+      insights.push(`Only ${workoutDays} workout day(s) logged this week — aim for the Mon/Wed/Fri gym + Tue/Thu/Sat walk pattern.`);
+    } else {
+      insights.push(`${workoutDays} workout days logged this week — on pace with your routine.`);
+    }
+
+    insights.push(`Dietary rule reminder: ${t.note}.`);
+
+    res.json({ user, avg_calories_3day: Math.round(avgCal), workout_days_7day: workoutDays, insights });
+  });
+
   return router;
 };
