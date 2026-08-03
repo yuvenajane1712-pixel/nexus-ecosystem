@@ -34,6 +34,14 @@
         <div class="row"><span class="label">Nadylan + Tours net profit</span><span class="val" id="profitSum">—</span></div>
         <div class="row"><span class="label">Open orders</span><span class="val" id="openOrders">—</span></div>
       </div>
+      <div class="card">
+        <h3>💱 Today's Exchange Rate</h3>
+        <div class="grid2">
+          <input id="fx_rate_input" type="number" placeholder="2180" />
+          <button class="small secondary" onclick="updateFxRate()">Update rate</button>
+        </div>
+        <div class="meta">1 RMB = <span id="fx_current">—</span> IDR. New orders lock this rate; orders auto-relock to today's rate when marked "Sudah Bayar."</div>
+      </div>
       <div class="section-title">Nadylan Orders (Track A — China → Indonesia)</div>
       <a class="export-link" href="/api/export/business/orders.xlsx">⬇ Export all orders (Excel)</a>
       <div id="ordersList"><div class="empty">No orders yet</div></div>
@@ -90,10 +98,15 @@
     <!-- ===== TAB: CRM ===== -->
     <section class="tab-panel hidden" id="tab-crm">
       <input id="crm_search" placeholder="🔍 Search A–Z by name..." oninput="loadCRM()" />
-      <div class="grid2" style="margin-bottom:10px;">
+      <div class="grid2" style="margin-bottom:6px;">
         <button class="small secondary" onclick="filterCRM('')">All</button>
-        <button class="small secondary" onclick="filterCRM('buyer')">Buyers only</button>
+        <button class="small secondary" onclick="filterCRM('id_supplier')">ID Suppliers</button>
       </div>
+      <div class="grid2" style="margin-bottom:10px;">
+        <button class="small secondary" onclick="filterCRM('id_buyer')">ID Buyers</button>
+        <button class="small secondary" onclick="filterCRM('cn_supplier')">CN Suppliers</button>
+      </div>
+      <button class="small secondary" style="margin-bottom:10px;" onclick="filterCRM('cn_buyer')">CN Buyers</button>
       <div id="crmList"><div class="empty">No contacts yet</div></div>
     </section>
 
@@ -199,9 +212,11 @@
       <label>Spec / color / variant</label>
       <input id="i_spec" placeholder="e.g. Black, XL, Model A" />
       <div class="grid2">
-        <div><label>Unit price (RMB)</label><input id="i_price" type="number" placeholder="5" /></div>
-        <div><label>Qty</label><input id="i_qty" type="number" value="1" /></div>
+        <div><label>Unit price</label><input id="i_price" type="number" placeholder="5" /></div>
+        <div><label>Currency</label><select id="i_currency"><option value="RMB">RMB</option><option value="IDR">IDR</option></select></div>
       </div>
+      <label>Qty</label>
+      <input id="i_qty" type="number" value="1" />
       <label>CBM (total for this line)</label>
       <input id="i_cbm" type="number" step="0.001" placeholder="0.05" />
       <button onclick="submitItem()">Add Product to Order</button>
@@ -249,8 +264,9 @@
       <input id="b_summary" placeholder="e.g. Gayo Arabica 1 ton" />
       <label>Profit model</label>
       <select id="b_model" onchange="toggleProfitModel()">
-        <option value="margin">Margin (cost vs selling price)</option>
-        <option value="broker">Broker fee (% of selling price)</option>
+        <option value="margin">Margin only (cost vs selling price)</option>
+        <option value="fee">Fee only (% of selling price)</option>
+        <option value="both">Both — margin + fee combined</option>
       </select>
       <div id="b_marginFields">
         <label>Cost price (RMB)</label>
@@ -259,7 +275,7 @@
       <label>Selling price (RMB)</label>
       <input id="b_sell" type="number" placeholder="38000" />
       <div id="b_brokerFields" class="hidden">
-        <label>Broker fee rate (%)</label>
+        <label>Fee rate (%)</label>
         <input id="b_feerate" type="number" placeholder="8" />
       </div>
       <label>Freight (RMB)</label>
@@ -281,16 +297,33 @@
     </div>
   </div>
 
+  <div class="sheet-overlay" id="costItemSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('costItemSheet')">Close ✕</div>
+      <h2>Add Cost Item</h2>
+      <input type="hidden" id="ci_productId" />
+      <label>Price type</label>
+      <select id="ci_type"><option value="FOB">FOB</option><option value="CIF">CIF</option><option value="Futures">Futures (期货)</option></select>
+      <label>Item / label</label>
+      <input id="ci_label" placeholder="e.g. base price, freight, handling" />
+      <div class="grid2">
+        <div><label>Amount</label><input id="ci_amount" type="number" placeholder="1000000" /></div>
+        <div><label>Currency</label><select id="ci_currency"><option value="IDR">IDR</option><option value="RMB">RMB</option></select></div>
+      </div>
+      <button onclick="submitCostItem()">Add Cost Item</button>
+    </div>
+  </div>
+
   <div class="sheet-overlay" id="crmSheet">
     <div class="sheet">
       <div class="close" onclick="NEXUS.closeSheet('crmSheet')">Close ✕</div>
       <h2>New CRM Contact</h2>
       <label>Type</label>
       <select id="c_kind">
-        <option value="buyer">Buyer</option>
-        <option value="supplier">Supplier</option>
-        <option value="indo_supplier">Indonesian Supplier (Track B)</option>
-        <option value="chinese_buyer">Chinese Buyer (Track B)</option>
+        <option value="id_supplier">Indonesian Supplier</option>
+        <option value="id_buyer">Indonesian Buyer</option>
+        <option value="cn_supplier">Chinese Supplier</option>
+        <option value="cn_buyer">Chinese Buyer</option>
       </select>
       <label>Name</label>
       <input id="c_name" placeholder="Company / person name" />

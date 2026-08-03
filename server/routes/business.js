@@ -66,8 +66,13 @@ module.exports = function (io) {
     const order = db.prepare("SELECT * FROM orders WHERE id=?").get(orderId);
     if (!order) return null;
     const items = db.prepare("SELECT * FROM order_items WHERE order_id=?").all(orderId);
+    const fx = order.fx_rate || getFxRate(); // IDR per RMB
 
-    const productCost = items.reduce((s, i) => s + (i.unit_price || 0) * (i.qty || 1), 0);
+    const productCost = items.reduce((s, i) => {
+      const lineTotal = (i.unit_price || 0) * (i.qty || 1);
+      const lineRmb = (i.currency === "IDR") ? lineTotal / fx : lineTotal;
+      return s + lineRmb;
+    }, 0);
     const cbmTotal = items.reduce((s, i) => s + (i.cbm || 0), 0);
     const logisticsCost = cbmTotal * (order.logistics_rate_per_cbm || 0) + (order.logistics_supplier_to_cn || 0) + (order.logistics_id_to_buyer || 0);
     const serviceFee = productCost * ((order.fee_pct || 0) / 100);
@@ -134,19 +139,19 @@ module.exports = function (io) {
 
   // ---- line items ----
   router.post("/orders/:id/items", (req, res) => {
-    const { name, spec, unit_price, qty, cbm, photo_data } = req.body;
+    const { name, spec, unit_price, qty, cbm, photo_data, currency } = req.body;
     if (!name) return res.status(400).json({ error: "name required" });
     const info = db.prepare(`
-      INSERT INTO order_items (order_id, name, spec, unit_price, qty, cbm, photo_data)
-      VALUES (?,?,?,?,?,?,?)
-    `).run(req.params.id, name, spec || "", Number(unit_price) || 0, Number(qty) || 1, Number(cbm) || 0, photo_data || null);
+      INSERT INTO order_items (order_id, name, spec, unit_price, qty, cbm, photo_data, currency)
+      VALUES (?,?,?,?,?,?,?,?)
+    `).run(req.params.id, name, spec || "", Number(unit_price) || 0, Number(qty) || 1, Number(cbm) || 0, photo_data || null, currency === "IDR" ? "IDR" : "RMB");
     const totals = recomputeOrder(req.params.id);
     emit();
     res.json({ id: info.lastInsertRowid, ...totals });
   });
 
   router.put("/orders/:id/items/:itemId", (req, res) => {
-    const { name, spec, unit_price, qty, cbm, photo_data } = req.body;
+    const { name, spec, unit_price, qty, cbm, photo_data, currency } = req.body;
     const fields = [], params = [];
     if (name !== undefined) { fields.push("name=?"); params.push(name); }
     if (spec !== undefined) { fields.push("spec=?"); params.push(spec); }
@@ -154,6 +159,7 @@ module.exports = function (io) {
     if (qty !== undefined) { fields.push("qty=?"); params.push(Number(qty) || 1); }
     if (cbm !== undefined) { fields.push("cbm=?"); params.push(Number(cbm) || 0); }
     if (photo_data !== undefined) { fields.push("photo_data=?"); params.push(photo_data); }
+    if (currency !== undefined) { fields.push("currency=?"); params.push(currency === "IDR" ? "IDR" : "RMB"); }
     params.push(req.params.itemId);
     db.prepare(`UPDATE order_items SET ${fields.join(", ")} WHERE id=?`).run(...params);
     const totals = recomputeOrder(req.params.id);
@@ -185,12 +191,20 @@ module.exports = function (io) {
     const order = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
     if (!order) return res.status(404).json({ error: "not found" });
     const wasFinal = order.pipeline_status === "sampai_tujuan";
+
+    // when the buyer actually pays, re-lock the FX rate to today's rate (payment-day pricing)
+    if (pipeline_status === "sudah_bayar" && order.pipeline_status !== "sudah_bayar") {
+      db.prepare("UPDATE orders SET fx_rate=? WHERE id=?").run(getFxRate(), req.params.id);
+    }
+
     db.prepare("UPDATE orders SET pipeline_status=? WHERE id=?").run(pipeline_status, req.params.id);
+    recomputeOrder(req.params.id);
 
     if (pipeline_status === "sampai_tujuan" && !wasFinal) {
+      const updated = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
       db.prepare("UPDATE orders SET status='completed' WHERE id=?").run(req.params.id);
       db.prepare("INSERT INTO transactions (kind, category, amount_rmb, source, note) VALUES (?,?,?,?,?)")
-        .run("income", "Nadylan Trade Profit", order.net_profit, "business", `Order #${order.id} (${order.buyer_name})`);
+        .run("income", "Nadylan Trade Profit", updated.net_profit, "business", `Order #${order.id} (${order.buyer_name})`);
       emitBudget();
     }
     emit();

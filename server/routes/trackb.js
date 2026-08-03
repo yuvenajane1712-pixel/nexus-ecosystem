@@ -74,6 +74,43 @@ module.exports = function (io) {
     res.json({ seeded: defaults.length });
   });
 
+  // 12-stage Track B pipeline (per spec)
+  const TRACKB_PIPELINE = [
+    { key: "buyer_asking", label: "Buyer Asking" },
+    { key: "have_supplier", label: "Already Have Supplier" },
+    { key: "supplier_cert", label: "Supplier Providing Certificate" },
+    { key: "harvesting", label: "Harvesting" },
+    { key: "ready_product", label: "Ready Product" },
+    { key: "fully_packed", label: "Already All Packed" },
+    { key: "in_port", label: "Already In Port" },
+    { key: "shipping", label: "Already Shipping" },
+    { key: "arrived_china_port", label: "Already Arrive China Port" },
+    { key: "half_payment", label: "Already Half Payment" },
+    { key: "full_payment", label: "Already Full Payment" },
+    { key: "closing", label: "Finishing / Closing" },
+  ];
+  router.get("/pipeline-stages", (req, res) => res.json(TRACKB_PIPELINE));
+
+  // ---- unlimited cost line items per pricing model (FOB / CIF / Futures) ----
+  router.get("/catalog/:id/cost-items", (req, res) => {
+    res.json(db.prepare("SELECT * FROM track_b_cost_items WHERE catalog_product_id=? ORDER BY price_type, id").all(req.params.id));
+  });
+
+  router.post("/catalog/:id/cost-items", (req, res) => {
+    const { price_type, label, amount, currency } = req.body;
+    const info = db.prepare(`
+      INSERT INTO track_b_cost_items (catalog_product_id, price_type, label, amount, currency) VALUES (?,?,?,?,?)
+    `).run(req.params.id, price_type, label || "", Number(amount) || 0, currency === "RMB" ? "RMB" : "IDR");
+    emit();
+    res.json({ id: info.lastInsertRowid });
+  });
+
+  router.delete("/catalog/:id/cost-items/:itemId", (req, res) => {
+    db.prepare("DELETE FROM track_b_cost_items WHERE id=?").run(req.params.itemId);
+    emit();
+    res.json({ ok: true });
+  });
+
   router.get("/orders", (req, res) => {
     res.json(db.prepare("SELECT * FROM track_b_orders ORDER BY created_at DESC").all());
   });
@@ -91,17 +128,23 @@ module.exports = function (io) {
     const v = Number(vat) || 0;
     const misc = Number(misc_fees) || 0;
 
+    // profit_model: 'margin' | 'fee' | 'both'
+    const marginProfit = sell - cost;
+    const feeProfit = sell * ((Number(fee_rate) || 0) / 100);
     let profit = 0, marginPct = 0;
-    if (profit_model === "broker") {
-      profit = sell * ((Number(fee_rate) || 0) / 100);
+    if (profit_model === "fee") {
+      profit = feeProfit;
+    } else if (profit_model === "both") {
+      profit = marginProfit + feeProfit;
+      marginPct = sell > 0 ? (marginProfit / sell) * 100 : 0;
     } else {
-      profit = sell - cost;
-      marginPct = sell > 0 ? (profit / sell) * 100 : 0;
+      profit = marginProfit;
+      marginPct = sell > 0 ? (marginProfit / sell) * 100 : 0;
     }
 
     const info = db.prepare(`
-      INSERT INTO track_b_orders (buyer_name, product_summary, profit_model, fee_rate, cost_price, selling_price, freight, insurance, vat, misc_fees, profit, margin_pct, payment_method, status)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      INSERT INTO track_b_orders (buyer_name, product_summary, profit_model, fee_rate, cost_price, selling_price, freight, insurance, vat, misc_fees, profit, margin_pct, payment_method, status, pipeline_status)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'buyer_asking')
     `).run(buyer_name, product_summary || "", profit_model, fee_rate || 0, cost, sell, fr, ins, v, misc, profit, marginPct, payment_method || "", status || "open");
 
     emit();
@@ -115,15 +158,25 @@ module.exports = function (io) {
     res.json({ id: info.lastInsertRowid, profit, margin_pct: marginPct });
   });
 
-  router.put("/orders/:id/complete", (req, res) => {
+  router.put("/orders/:id/status", (req, res) => {
+    const { pipeline_status } = req.body;
     const order = db.prepare("SELECT * FROM track_b_orders WHERE id=?").get(req.params.id);
     if (!order) return res.status(404).json({ error: "not found" });
-    db.prepare("UPDATE track_b_orders SET status='completed' WHERE id=?").run(req.params.id);
-    if (order.status !== "completed") {
+    const wasClosing = order.pipeline_status === "closing";
+    db.prepare("UPDATE track_b_orders SET pipeline_status=? WHERE id=?").run(pipeline_status, req.params.id);
+
+    if (pipeline_status === "closing" && !wasClosing) {
+      db.prepare("UPDATE track_b_orders SET status='completed' WHERE id=?").run(req.params.id);
       db.prepare("INSERT INTO transactions (kind, category, amount_rmb, source, note) VALUES (?,?,?,?,?)")
         .run("income", "Nadylan Trade Profit", order.profit, "business", `Track B Order #${order.id} (${order.buyer_name})`);
       emitBudget();
     }
+    emit();
+    res.json({ ok: true });
+  });
+
+  router.delete("/orders/:id", (req, res) => {
+    db.prepare("DELETE FROM track_b_orders WHERE id=?").run(req.params.id);
     emit();
     res.json({ ok: true });
   });

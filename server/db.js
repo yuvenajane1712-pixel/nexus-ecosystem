@@ -247,6 +247,25 @@ try { db.exec("ALTER TABLE pet_logs ADD COLUMN urination_count INTEGER"); } catc
 try { db.exec("ALTER TABLE pet_logs ADD COLUMN heart_rate INTEGER"); } catch (e) {}
 try { db.exec("ALTER TABLE pet_logs ADD COLUMN food_grams REAL"); } catch (e) {}
 
+// Business Tracker dual-currency support on line items
+try { db.exec("ALTER TABLE order_items ADD COLUMN currency TEXT DEFAULT 'RMB'"); } catch (e) {}
+
+// Track B: unlimited cost line items per pricing model (FOB / CIF / Futures)
+db.exec(`
+CREATE TABLE IF NOT EXISTS track_b_cost_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  catalog_product_id INTEGER,
+  price_type TEXT,      -- 'FOB' | 'CIF' | 'Futures'
+  label TEXT,
+  amount REAL DEFAULT 0,
+  currency TEXT DEFAULT 'IDR',
+  created_at TEXT DEFAULT (datetime('now'))
+);
+`);
+
+// Track B: new 12-stage status pipeline, and profit-mode support
+try { db.exec("ALTER TABLE track_b_orders ADD COLUMN pipeline_status TEXT DEFAULT 'buyer_asking'"); } catch (e) {}
+
 db.exec(`
 CREATE TABLE IF NOT EXISTS pet_feeding_checklist (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

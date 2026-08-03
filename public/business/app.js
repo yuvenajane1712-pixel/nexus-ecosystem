@@ -63,6 +63,21 @@ function pipelineIndex(key) { return Math.max(0, PIPELINE.findIndex(p => p.key =
 async function refreshAll() {
   loadOrders();
   loadTours();
+  loadFxRate();
+}
+
+async function loadFxRate() {
+  const cfg = await NEXUS.get("/api/config");
+  document.getElementById("fx_current").textContent = cfg.fx_rate_idr_per_rmb;
+  document.getElementById("fx_rate_input").placeholder = cfg.fx_rate_idr_per_rmb;
+}
+
+async function updateFxRate() {
+  const val = document.getElementById("fx_rate_input").value;
+  if (!val) { alert("Enter today's rate."); return; }
+  await NEXUS.put("/api/config/fx_rate_idr_per_rmb", { value: val });
+  document.getElementById("fx_rate_input").value = "";
+  loadFxRate();
 }
 
 async function loadOrders() {
@@ -86,7 +101,7 @@ function renderOrderCard(o) {
       ${i.photo_data ? `<img class="item-thumb" src="${i.photo_data}" />` : `<div class="item-thumb"></div>`}
       <div class="item-info">
         <div class="name">${i.name}${i.spec ? ' — ' + i.spec : ''}</div>
-        <div class="meta2">qty ${i.qty} × ${NEXUS.fmtMoney(i.unit_price)} = ${NEXUS.fmtMoney(i.qty * i.unit_price)} · CBM ${i.cbm}</div>
+        <div class="meta2">qty ${i.qty} × ${i.currency === 'IDR' ? NEXUS.fmtMoney(i.unit_price,'IDR') : NEXUS.fmtMoney(i.unit_price)} <span class="mini-tag">${i.currency || 'RMB'}</span> · CBM ${i.cbm}</div>
       </div>
       <button class="small secondary" onclick="deleteItem(${o.id},${i.id})">✕</button>
     </div>
@@ -179,11 +194,12 @@ async function submitItem() {
   const name = document.getElementById("i_name").value.trim();
   const spec = document.getElementById("i_spec").value.trim();
   const unit_price = document.getElementById("i_price").value;
+  const currency = document.getElementById("i_currency").value;
   const qty = document.getElementById("i_qty").value || 1;
   const cbm = document.getElementById("i_cbm").value || 0;
   if (!name) { alert("Product name is required."); return; }
 
-  await NEXUS.post(`/api/business/orders/${orderId}/items`, { name, spec, unit_price, qty, cbm, photo_data: window.__itemPhotoData });
+  await NEXUS.post(`/api/business/orders/${orderId}/items`, { name, spec, unit_price, currency, qty, cbm, photo_data: window.__itemPhotoData });
   NEXUS.closeSheet("itemSheet");
   loadOrders();
 }
@@ -271,23 +287,53 @@ async function loadCatalog() {
   if (!catalog.length) { el.innerHTML = '<div class="empty">No catalog items — tap "Load default product catalog"</div>'; return; }
   const byCategory = {};
   catalog.forEach(c => { (byCategory[c.category] = byCategory[c.category] || []).push(c); });
-  el.innerHTML = Object.entries(byCategory).map(([cat, items]) => `
-    <div class="card">
-      <h3>${cat}</h3>
-      ${items.map(i => `
+
+  const cards = await Promise.all(Object.entries(byCategory).map(async ([cat, items]) => {
+    const itemsHtml = await Promise.all(items.map(async (i) => {
+      const costItems = await NEXUS.get(`/api/trackb/catalog/${i.id}/cost-items`);
+      const byType = {};
+      costItems.forEach(c => { (byType[c.price_type] = byType[c.price_type] || []).push(c); });
+      const costHtml = Object.entries(byType).map(([type, list]) => {
+        const total = list.reduce((s, c) => s + c.amount, 0);
+        return `<div class="meta">${type}: ${list.map(c => `${c.label} ${NEXUS.fmtMoney(c.amount, c.currency)}`).join(' + ')} = <strong>${NEXUS.fmtMoney(total, list[0].currency)}</strong></div>`;
+      }).join("");
+
+      return `
         <div style="border-top:1px solid #EEE; padding-top:8px; margin-top:8px;">
           <div class="row"><span class="label"><strong>${i.name}</strong>${i.grade ? ' ('+i.grade+')' : ''}</span><span class="val">${i.ready_stock ? '✅ ready' : '⏳ order'}</span></div>
           ${i.process || i.altitude || i.variety ? `<div class="meta">${[i.process, i.altitude, i.variety].filter(Boolean).join(' · ')}</div>` : ''}
           ${i.moisture_pct || i.defect_pct ? `<div class="meta">Moisture ${i.moisture_pct||'-'}% · Defect ${i.defect_pct||'-'}%</div>` : ''}
-          ${i.price_idr_per_kg || i.price_rmb_per_kg ? `<div class="meta">${NEXUS.fmtMoney(i.price_idr_per_kg,'IDR')}/kg · ¥${i.price_rmb_per_kg||'-'}/kg</div>` : ''}
+          ${costHtml}
+          <button class="small secondary" style="margin-top:4px;" onclick="openCostItemSheet(${i.id})">+ Add cost item</button>
           <div style="margin-top:4px;">
             <a class="export-link" href="/api/export/catalog/${i.id}/xlsx">⬇ Excel</a> ·
             <a class="export-link" href="/api/export/catalog/${i.id}/docx">⬇ Word</a>
           </div>
         </div>
-      `).join("")}
-    </div>
-  `).join("");
+      `;
+    }));
+    return `<div class="card"><h3>${cat}</h3>${itemsHtml.join("")}</div>`;
+  }));
+
+  el.innerHTML = cards.join("");
+}
+
+function openCostItemSheet(productId) {
+  document.getElementById("ci_productId").value = productId;
+  ["ci_label","ci_amount"].forEach(id => document.getElementById(id).value = "");
+  NEXUS.openSheet("costItemSheet");
+}
+
+async function submitCostItem() {
+  const productId = document.getElementById("ci_productId").value;
+  const price_type = document.getElementById("ci_type").value;
+  const label = document.getElementById("ci_label").value.trim();
+  const amount = document.getElementById("ci_amount").value;
+  const currency = document.getElementById("ci_currency").value;
+  if (!label || !amount) { alert("Label and amount are required."); return; }
+  await NEXUS.post(`/api/trackb/catalog/${productId}/cost-items`, { price_type, label, amount, currency });
+  NEXUS.closeSheet("costItemSheet");
+  loadCatalog();
 }
 
 async function showCertGuide() {
@@ -327,30 +373,52 @@ async function seedCatalog() {
   loadCatalog();
 }
 
+const TRACKB_PIPELINE = [
+  { key: "buyer_asking", label: "Buyer Asking" },
+  { key: "have_supplier", label: "Already Have Supplier" },
+  { key: "supplier_cert", label: "Supplier Providing Certificate" },
+  { key: "harvesting", label: "Harvesting" },
+  { key: "ready_product", label: "Ready Product" },
+  { key: "fully_packed", label: "Already All Packed" },
+  { key: "in_port", label: "Already In Port" },
+  { key: "shipping", label: "Already Shipping" },
+  { key: "arrived_china_port", label: "Already Arrive China Port" },
+  { key: "half_payment", label: "Already Half Payment" },
+  { key: "full_payment", label: "Already Full Payment" },
+  { key: "closing", label: "Finishing / Closing" },
+];
+function trackbPipelineIndex(key) { return Math.max(0, TRACKB_PIPELINE.findIndex(p => p.key === key)); }
+
 async function loadTrackBOrders() {
   const orders = await NEXUS.get("/api/trackb/orders");
   document.getElementById("trackbOpen").textContent = orders.filter(o => o.status === 'open').length;
   const el = document.getElementById("trackbOrdersList");
   if (!orders.length) { el.innerHTML = '<div class="empty">No orders yet</div>'; return; }
-  el.innerHTML = orders.map(o => `
-    <div class="list-item">
-      <div>
-        <div><strong>${o.buyer_name}</strong> — ${o.product_summary || ""}</div>
-        <div class="meta">${NEXUS.fmtDate(o.created_at)} · ${o.profit_model} model</div>
+  el.innerHTML = orders.map(o => {
+    const stIdx = trackbPipelineIndex(o.pipeline_status || "buyer_asking");
+    return `
+    <div class="order-card">
+      <div class="order-head">
+        <div>
+          <strong>${o.buyer_name}</strong> — ${o.product_summary || ""}
+          <div class="meta">${NEXUS.fmtDate(o.created_at)} · ${o.profit_model} model</div>
+        </div>
+        <button class="small secondary" onclick="deleteTrackB(${o.id})">🗑</button>
       </div>
-      <div style="text-align:right;">
-        <div class="tag ${o.status === 'completed' ? 'income' : 'expense'}">${o.status}</div>
-        <div class="meta" style="margin-top:6px;">profit ${NEXUS.fmtMoney(o.profit)} ${o.margin_pct ? '('+o.margin_pct.toFixed(1)+'%)' : ''}</div>
-        ${o.status === 'open' ? `<button class="small secondary" style="margin-top:6px;" onclick="completeTrackB(${o.id})">Complete</button>` : ""}
-      </div>
+      <select class="status-select st-${stIdx % 7}" onchange="updateTrackBStatus(${o.id}, this.value)">
+        ${TRACKB_PIPELINE.map(p => `<option value="${p.key}" ${p.key === o.pipeline_status ? 'selected' : ''}>${p.label}</option>`).join("")}
+      </select>
+      <div class="row" style="margin-top:8px;"><span class="label">Profit</span><span class="val">${NEXUS.fmtMoney(o.profit)} ${o.margin_pct ? '('+o.margin_pct.toFixed(1)+'%)' : ''}</span></div>
+      <a class="export-link" href="/api/export/trackb/orders/${o.id}/docx-zh" target="_blank">⬇ 中文订单确认书 (Chinese Word doc)</a>
     </div>
-  `).join("");
+  `;
+  }).join("");
 }
 
 function toggleProfitModel() {
   const mode = document.getElementById("b_model").value;
-  document.getElementById("b_marginFields").classList.toggle("hidden", mode === "broker");
-  document.getElementById("b_brokerFields").classList.toggle("hidden", mode !== "broker");
+  document.getElementById("b_marginFields").classList.toggle("hidden", mode === "fee");
+  document.getElementById("b_brokerFields").classList.toggle("hidden", mode === "margin");
 }
 
 async function submitTrackB() {
@@ -374,7 +442,12 @@ async function submitTrackB() {
   loadTrackBOrders();
 }
 
-async function completeTrackB(id) { await NEXUS.put(`/api/trackb/orders/${id}/complete`, {}); loadTrackBOrders(); }
+async function updateTrackBStatus(id, val) { await NEXUS.put(`/api/trackb/orders/${id}/status`, { pipeline_status: val }); loadTrackBOrders(); }
+async function deleteTrackB(id) {
+  if (!confirm("Delete this Track B order?")) return;
+  await NEXUS.del(`/api/trackb/orders/${id}`);
+  loadTrackBOrders();
+}
 
 // =========================================================
 // CRM

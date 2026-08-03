@@ -180,6 +180,7 @@ module.exports = function () {
   router.get("/catalog/:id/xlsx", async (req, res) => {
     const p = db.prepare("SELECT * FROM catalog_products WHERE id=?").get(req.params.id);
     if (!p) return res.status(404).send("Product not found");
+    const costItems = db.prepare("SELECT * FROM track_b_cost_items WHERE catalog_product_id=? ORDER BY price_type").all(p.id);
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Spec Sheet 规格表");
@@ -198,12 +199,20 @@ module.exports = function () {
       ["Ready stock / 现货", p.ready_stock ? "Yes / 有" : "No / 无 (made to order)"],
       ["Price (IDR/kg) / 价格(印尼盾/kg)", p.price_idr_per_kg ?? "-"],
       ["Price (RMB/kg) / 价格(人民币/kg)", p.price_rmb_per_kg ?? "-"],
-      ["FOB price / FOB价", p.fob_price ?? "-"],
-      ["CIF price / CIF价", p.cif_price ?? "-"],
-      ["Certificates / 证书", p.certificate_docs || "See certificate guide / 见证书指南"],
     ];
     rows.forEach((r) => ws.addRow(r));
     ws.getColumn(1).font = { bold: true };
+
+    if (costItems.length) {
+      ws.addRow([]);
+      ws.addRow(["Cost Breakdown / 成本明细"]).font = { bold: true };
+      ws.addRow(["Price Type / 定价类型", "Item / 项目", "Amount / 金额", "Currency / 货币"]).font = { bold: true };
+      costItems.forEach((c) => ws.addRow([c.price_type, c.label, c.amount, c.currency]));
+      ["FOB", "CIF", "Futures"].forEach((type) => {
+        const total = costItems.filter((c) => c.price_type === type).reduce((s, c) => s + c.amount, 0);
+        if (total > 0) ws.addRow([`${type} Total`, "", total]);
+      });
+    }
 
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename=spec-sheet-${p.id}.xlsx`);
@@ -247,6 +256,48 @@ module.exports = function () {
     const buf = await Packer.toBuffer(doc);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     res.setHeader("Content-Disposition", `attachment; filename=spec-sheet-${p.id}.docx`);
+    res.send(buf);
+  });
+
+  // ---- Track B order summary — full Chinese language, with margin/fee breakdown ----
+  router.get("/trackb/orders/:id/docx-zh", async (req, res) => {
+    const o = db.prepare("SELECT * FROM track_b_orders WHERE id=?").get(req.params.id);
+    if (!o) return res.status(404).send("Order not found");
+
+    const modelLabel = { margin: "利润差价模式", fee: "佣金模式", both: "差价+佣金模式" }[o.profit_model] || o.profit_model;
+
+    const row = (label, value) => new TableRow({ children: [
+      new TableCell({ width: { size: 40, type: WidthType.PERCENTAGE }, children: [new Paragraph({ children: [new TextRun({ text: label, bold: true })] })] }),
+      new TableCell({ width: { size: 60, type: WidthType.PERCENTAGE }, children: [new Paragraph(String(value ?? "-"))] }),
+    ]});
+
+    const doc = new Document({
+      sections: [{
+        children: [
+          new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: `订单确认书 #${o.id}`, bold: true })] }),
+          new Paragraph({ text: `买方: ${o.buyer_name}`, spacing: { after: 200 } }),
+          new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [
+            row("产品说明", o.product_summary),
+            row("定价模式", modelLabel),
+            row("成本价 (RMB)", o.cost_price),
+            row("销售价 (RMB)", o.selling_price),
+            row("运费", o.freight),
+            row("保险费", o.insurance),
+            row("增值税", o.vat),
+            row("其他费用", o.misc_fees),
+            row("佣金比例 (%)", o.fee_rate),
+            row("利润 (RMB)", o.profit?.toFixed(2)),
+            row("利润率 (%)", o.margin_pct ? o.margin_pct.toFixed(2) : "-"),
+            row("付款方式", o.payment_method),
+            row("状态", o.pipeline_status),
+          ]}),
+        ],
+      }],
+    });
+
+    const buf = await Packer.toBuffer(doc);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", `attachment; filename=order-${o.id}-zh.docx`);
     res.send(buf);
   });
 
