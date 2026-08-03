@@ -7,13 +7,36 @@ module.exports = function (io) {
   const emitBudget = () => io.emit("data:change", { module: "budget" });
 
   router.get("/logs", (req, res) => {
-    const { user_name, log_type } = req.query;
+    const { user_name, log_type, meal_slot } = req.query;
     let sql = "SELECT * FROM health_logs WHERE 1=1";
     const params = [];
     if (user_name) { sql += " AND user_name=?"; params.push(user_name); }
     if (log_type) { sql += " AND log_type=?"; params.push(log_type); }
+    if (meal_slot) { sql += " AND meal_slot=?"; params.push(meal_slot); }
     sql += " ORDER BY created_at DESC LIMIT 200";
     res.json(db.prepare(sql).all(...params));
+  });
+
+  // log a meal by picking a food + grams — nutrition auto-calculated from the food database
+  router.post("/logs/meal", (req, res) => {
+    const { user_name, meal_slot, food_item_id, grams, cooking_method } = req.body;
+    const food = db.prepare("SELECT * FROM food_items WHERE id=?").get(food_item_id);
+    if (!food) return res.status(400).json({ error: "food not found" });
+    const g = Number(grams) || 0;
+    const ratio = g / 100;
+    const calories = Math.round(food.calories_per100 * ratio);
+    const protein = Math.round(food.protein_per100 * ratio * 10) / 10;
+    const fat = Math.round(food.fat_per100 * ratio * 10) / 10;
+    const carbs = Math.round(food.carbs_per100 * ratio * 10) / 10;
+    const fiber = Math.round(food.fiber_per100 * ratio * 10) / 10;
+
+    const info = db.prepare(`
+      INSERT INTO health_logs (user_name, log_type, title, value, calories, protein, fat, carbs, fiber, meal_slot, food_item_id, grams)
+      VALUES (?, 'diet', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(user_name, food.name, cooking_method || "", calories, protein, fat, carbs, fiber, meal_slot || "", food_item_id, g);
+
+    emit();
+    res.json({ id: info.lastInsertRowid, calories, protein, fat, carbs, fiber });
   });
 
   router.post("/logs", (req, res) => {
@@ -144,6 +167,21 @@ module.exports = function (io) {
     `).all(user);
     const points = logs.map((l) => ({ date: l.d, weight: parseFloat(l.value) })).filter((p) => !isNaN(p.weight));
     res.json({ user, goal_start: g.start, goal_target: g.target, points });
+  });
+
+  // today's meals grouped by breakfast/lunch/dinner/snack
+  router.get("/meals-today/:user", (req, res) => {
+    const rows = db.prepare(`
+      SELECT * FROM health_logs WHERE user_name=? AND log_type='diet' AND date(created_at)=date('now')
+      ORDER BY created_at ASC
+    `).all(req.params.user);
+    const bySlot = { breakfast: [], lunch: [], dinner: [], snack: [] };
+    rows.forEach((r) => { if (bySlot[r.meal_slot]) bySlot[r.meal_slot].push(r); });
+    const totals = rows.reduce((acc, r) => ({
+      calories: acc.calories + (r.calories || 0), protein: acc.protein + (r.protein || 0),
+      fat: acc.fat + (r.fat || 0), carbs: acc.carbs + (r.carbs || 0), fiber: acc.fiber + (r.fiber || 0),
+    }), { calories: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 });
+    res.json({ bySlot, totals });
   });
 
   return router;

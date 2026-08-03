@@ -12,22 +12,46 @@
 <body>
   <div class="topbar">
     <span><span class="sync-dot" id="syncDot"></span>Health Tracker</span>
-    <select id="userSelect" style="width:auto;margin:0;padding:4px 8px;font-size:13px;">
-      <option value="Yuvena">Yuvena</option>
-      <option value="Nadine">Nadine</option>
-    </select>
+    <select id="personSelect" style="width:auto;margin:0;padding:4px 8px;font-size:13px;"></select>
   </div>
 
   <main>
+    <div class="card" id="profileCard"></div>
+
     <div class="card">
-      <h3>Today — <span id="userLabel">Yuvena</span></h3>
-      <div class="row"><span class="label">Calories logged today</span><span class="val" id="calToday">—</span></div>
-      <div class="row"><span class="label">Latest weight</span><span class="val" id="latestWeight">—</span></div>
-      <div class="row"><span class="label">Reminder</span><span class="val" id="reminder">—</span></div>
+      <h3>🎯 Daily Needs (BMR-based)</h3>
+      <div id="needsBox">Loading...</div>
     </div>
 
     <div class="card">
-      <h3>🤖 AI Coaching (rule-based)</h3>
+      <h3>📅 Today's Meals by Slot</h3>
+      <div id="mealsBySlot"></div>
+      <div class="row" style="margin-top:10px; border-top:1px solid #EEE; padding-top:8px;">
+        <span class="label"><strong>Today's total</strong></span>
+        <span class="val" id="todayTotals">—</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>⏰ Today's Schedule</h3>
+      <div class="grid2">
+        <div><label>Wake</label><input type="time" id="sch_wake" onchange="saveSchedule()" /></div>
+        <div><label>Sleep</label><input type="time" id="sch_sleep" onchange="saveSchedule()" /></div>
+      </div>
+      <div class="grid2">
+        <div><label>Breakfast</label><input type="time" id="sch_breakfast" onchange="saveSchedule()" /></div>
+        <div><label>Lunch</label><input type="time" id="sch_lunch" onchange="saveSchedule()" /></div>
+      </div>
+      <div class="grid2">
+        <div><label>Snack</label><input type="time" id="sch_snack" onchange="saveSchedule()" /></div>
+        <div><label>Dinner</label><input type="time" id="sch_dinner" onchange="saveSchedule()" /></div>
+      </div>
+      <label>Workout time</label>
+      <input type="time" id="sch_workout" onchange="saveSchedule()" />
+    </div>
+
+    <div class="card">
+      <h3>🤖 AI Coaching</h3>
       <div id="insightBox" class="meta">Loading...</div>
     </div>
 
@@ -50,35 +74,39 @@
     <a href="/budget/"><span class="ic">💰</span>Budget</a>
   </div>
 
-  <!-- action chooser -->
   <div class="sheet-overlay" id="actionSheet">
     <div class="sheet">
       <div class="close" onclick="NEXUS.closeSheet('actionSheet')">Close ✕</div>
       <h2>What do you want to log?</h2>
-      <button class="action-option" onclick="openForm('dietSheet')">🍽 Diet / Meal</button>
+      <button class="action-option" onclick="openForm('mealSheet')">🍽 Meal (breakfast/lunch/dinner/snack)</button>
       <button class="action-option" onclick="openForm('workoutSheet')">🏃 Workout</button>
       <button class="action-option" onclick="openForm('metricSheet')">📊 Metric (weight, BP, HR, SpO2)</button>
       <button class="action-option" onclick="openForm('supplementSheet')">💊 Supplement / TCM</button>
       <button class="action-option" onclick="openForm('grocerySheet')">🛒 Grocery purchase</button>
+      <button class="action-option" onclick="openForm('personSheet')">👤 Add a person</button>
     </div>
   </div>
 
-  <!-- Diet form -->
-  <div class="sheet-overlay" id="dietSheet">
+  <!-- Meal form: pick slot + food + grams, auto-calculates nutrition -->
+  <div class="sheet-overlay" id="mealSheet">
     <div class="sheet">
-      <div class="close" onclick="NEXUS.closeSheet('dietSheet')">Close ✕</div>
+      <div class="close" onclick="NEXUS.closeSheet('mealSheet')">Close ✕</div>
       <h2>Log a Meal</h2>
-      <label>Meal name</label>
-      <input id="d_title" placeholder="e.g. lunch — chicken rice bowl" />
-      <label>Calories</label>
-      <input id="d_calories" type="number" placeholder="450" />
-      <div class="grid2">
-        <div><label>Protein (g)</label><input id="d_protein" type="number" placeholder="30" /></div>
-        <div><label>Fat (g)</label><input id="d_fat" type="number" placeholder="15" /></div>
-      </div>
-      <label>Carbs (g)</label>
-      <input id="d_carbs" type="number" placeholder="50" />
-      <button onclick="submitDiet()">Save Meal</button>
+      <label>Meal slot</label>
+      <select id="meal_slot">
+        <option value="breakfast">Breakfast</option>
+        <option value="lunch">Lunch</option>
+        <option value="dinner">Dinner</option>
+        <option value="snack">Snack</option>
+      </select>
+      <label>Food</label>
+      <select id="meal_food"></select>
+      <label>Amount (grams)</label>
+      <input id="meal_grams" type="number" placeholder="150" />
+      <label>Cooking method (optional)</label>
+      <input id="meal_cooking" placeholder="e.g. grilled, steamed, fried" />
+      <div id="mealPreview" class="card" style="background:#EAF1F1;"></div>
+      <button onclick="submitMeal()">Save Meal</button>
     </div>
   </div>
 
@@ -153,6 +181,54 @@
       <label>Cost (RMB) — auto-posts to Budget</label>
       <input id="g_cost" type="number" placeholder="85" />
       <button onclick="submitGrocery()">Save</button>
+    </div>
+  </div>
+
+  <!-- Add person form -->
+  <div class="sheet-overlay" id="personSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('personSheet')">Close ✕</div>
+      <h2>Add a Person</h2>
+      <label>Name</label>
+      <input id="p_name" placeholder="e.g. Yuvena" />
+      <div class="grid2">
+        <div><label>Height (cm)</label><input id="p_height" type="number" placeholder="165" /></div>
+        <div><label>Weight (kg)</label><input id="p_weight" type="number" placeholder="98" /></div>
+      </div>
+      <div class="grid2">
+        <div><label>Age</label><input id="p_age" type="number" placeholder="24" /></div>
+        <div><label>Gender</label><select id="p_gender"><option value="female">Female</option><option value="male">Male</option></select></div>
+      </div>
+      <label>Activity level</label>
+      <select id="p_activity">
+        <option value="sedentary">Sedentary (little exercise)</option>
+        <option value="light">Light (1-3 days/week)</option>
+        <option value="moderate" selected>Moderate (3-5 days/week)</option>
+        <option value="active">Active (6-7 days/week)</option>
+        <option value="very_active">Very active (physical job + training)</option>
+      </select>
+      <label><input type="checkbox" id="p_noredmeat" style="width:auto;display:inline;" /> No red meat</label>
+      <label><input type="checkbox" id="p_glutenfree" style="width:auto;display:inline;" /> Gluten-free</label>
+      <label><input type="checkbox" id="p_dairyfree" style="width:auto;display:inline;" /> Dairy-free</label>
+      <label><input type="checkbox" id="p_soyfree" style="width:auto;display:inline;" /> Soy-free</label>
+      <button onclick="submitPerson()">Add Person</button>
+    </div>
+  </div>
+
+  <!-- Edit person weight/height -->
+  <div class="sheet-overlay" id="updatePersonSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('updatePersonSheet')">Close ✕</div>
+      <h2>Update Body Info</h2>
+      <div class="grid2">
+        <div><label>Height (cm)</label><input id="up_height" type="number" /></div>
+        <div><label>Weight (kg)</label><input id="up_weight" type="number" /></div>
+      </div>
+      <label>Age</label>
+      <input id="up_age" type="number" />
+      <label>Goal weight (kg, optional — affects calorie target)</label>
+      <input id="up_goal" type="number" />
+      <button onclick="submitPersonUpdate()">Save</button>
     </div>
   </div>
 

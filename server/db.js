@@ -250,6 +250,56 @@ try { db.exec("ALTER TABLE pet_logs ADD COLUMN food_grams REAL"); } catch (e) {}
 // Business Tracker dual-currency support on line items
 try { db.exec("ALTER TABLE order_items ADD COLUMN currency TEXT DEFAULT 'RMB'"); } catch (e) {}
 
+db.exec(`
+CREATE TABLE IF NOT EXISTS people (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT,
+  height_cm REAL,
+  weight_kg REAL,
+  age INTEGER,
+  gender TEXT,               -- 'male' | 'female'
+  activity_level TEXT DEFAULT 'moderate',  -- sedentary | light | moderate | active | very_active
+  no_red_meat INTEGER DEFAULT 0,
+  gluten_free INTEGER DEFAULT 0,
+  dairy_free INTEGER DEFAULT 0,
+  soy_free INTEGER DEFAULT 0,
+  notes TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS food_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT,
+  category TEXT,              -- protein | carb | veggie | fruit | fat | other
+  calories_per100 REAL,
+  protein_per100 REAL,
+  fat_per100 REAL,
+  carbs_per100 REAL,
+  fiber_per100 REAL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS daily_schedule (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  person_id INTEGER,
+  log_date TEXT,
+  wake_time TEXT,
+  sleep_time TEXT,
+  breakfast_time TEXT,
+  lunch_time TEXT,
+  snack_time TEXT,
+  dinner_time TEXT,
+  workout_time TEXT,
+  UNIQUE(person_id, log_date)
+);
+`);
+
+// health_logs: add person_id, meal_slot, food_item_id, grams (for the new meal-based diet logging)
+try { db.exec("ALTER TABLE health_logs ADD COLUMN person_id INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE health_logs ADD COLUMN meal_slot TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE health_logs ADD COLUMN food_item_id INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE health_logs ADD COLUMN grams REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE health_logs ADD COLUMN fiber REAL"); } catch (e) {}
+
 // Track B: unlimited cost line items per pricing model (FOB / CIF / Futures)
 db.exec(`
 CREATE TABLE IF NOT EXISTS track_b_cost_items (
