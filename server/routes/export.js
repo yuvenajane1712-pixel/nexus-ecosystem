@@ -1,6 +1,7 @@
 const express = require("express");
 const PDFDocument = require("pdfkit");
 const ExcelJS = require("exceljs");
+const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, HeadingLevel } = require("docx");
 const db = require("../db");
 
 function fmtRMB(n) { return "¥" + Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 }); }
@@ -13,6 +14,7 @@ module.exports = function () {
   router.get("/order/:id/pdf", (req, res) => {
     const order = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
     if (!order) return res.status(404).send("Order not found");
+    const items = db.prepare("SELECT * FROM order_items WHERE order_id=?").all(order.id);
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename=invoice-order-${order.id}.pdf`);
@@ -22,18 +24,27 @@ module.exports = function () {
 
     doc.fontSize(20).fillColor("#1F3864").text("NEXUS — Nadylan Sourcing Invoice", { align: "left" });
     doc.moveDown(0.5);
-    doc.fontSize(10).fillColor("#666").text(`Order #${order.id}  ·  ${order.created_at}  ·  Status: ${order.status}`);
+    doc.fontSize(10).fillColor("#666").text(`Order #${order.id}  ·  ${order.created_at}  ·  Status: ${order.pipeline_status || order.status}`);
+    if (order.tracking_code) doc.text(`Tracking code: ${order.tracking_code}`);
     doc.moveDown(1);
 
     doc.fontSize(12).fillColor("#000").text(`Buyer: ${order.buyer_name}`);
-    doc.text(`Product: ${order.product_summary || "-"}`);
     doc.text(`Exchange rate locked: ${order.fx_rate} IDR/RMB`);
+    doc.moveDown(1);
+
+    doc.fontSize(13).fillColor("#0F6E6E").text("Products");
+    doc.moveDown(0.3);
+    doc.fontSize(10).fillColor("#000");
+    items.forEach((i) => {
+      doc.text(`${i.name}${i.spec ? " (" + i.spec + ")" : ""} — qty ${i.qty} × ${fmtRMB(i.unit_price)} = ${fmtRMB(i.qty * i.unit_price)}  ·  CBM ${i.cbm}`);
+    });
     doc.moveDown(1);
 
     doc.fontSize(13).fillColor("#0F6E6E").text("Cost Breakdown");
     doc.moveDown(0.3);
     doc.fontSize(11).fillColor("#000");
     doc.text(`Product cost:        ${fmtRMB(order.product_cost)}`);
+    doc.text(`Total CBM:           ${order.cbm_total}`);
     doc.text(`Logistics cost:      ${fmtRMB(order.logistics_cost)}`);
     doc.text(`Service fee (${order.fee_pct}%):   ${fmtRMB(order.service_fee)}`);
     doc.moveDown(0.5);
@@ -110,13 +121,14 @@ module.exports = function () {
     ws.columns = [
       { header: "Order #", key: "id", width: 10 },
       { header: "Buyer", key: "buyer_name", width: 22 },
-      { header: "Product", key: "product_summary", width: 28 },
       { header: "Product Cost", key: "product_cost", width: 14 },
+      { header: "CBM Total", key: "cbm_total", width: 12 },
       { header: "Fee %", key: "fee_pct", width: 10 },
       { header: "Logistics", key: "logistics_cost", width: 14 },
       { header: "Total Payment", key: "total_payment", width: 16 },
       { header: "Net Profit", key: "net_profit", width: 14 },
-      { header: "Status", key: "status", width: 12 },
+      { header: "Pipeline Status", key: "pipeline_status", width: 24 },
+      { header: "Tracking Code", key: "tracking_code", width: 18 },
       { header: "Date", key: "created_at", width: 20 },
     ];
     ws.getRow(1).font = { bold: true };
@@ -162,6 +174,80 @@ module.exports = function () {
     doc.text(`Revenue goal: ${fmtIDR(cfg.revenue_goal_idr)} by ${cfg.revenue_goal_deadline}`);
 
     doc.end();
+  });
+
+  // ---- Product spec sheet (Excel) — bilingual labels, easy for Chinese buyers ----
+  router.get("/catalog/:id/xlsx", async (req, res) => {
+    const p = db.prepare("SELECT * FROM catalog_products WHERE id=?").get(req.params.id);
+    if (!p) return res.status(404).send("Product not found");
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Spec Sheet 规格表");
+    ws.columns = [{ width: 28 }, { width: 30 }];
+    const rows = [
+      ["Product / 产品", p.name],
+      ["Category / 类别", p.category],
+      ["Grade / 等级", p.grade || "-"],
+      ["Process / 处理法", p.process || "-"],
+      ["Altitude / 海拔", p.altitude || "-"],
+      ["Variety / 品种", p.variety || "-"],
+      ["Moisture % / 水分含量", p.moisture_pct ?? "-"],
+      ["Defect % / 瑕疵率", p.defect_pct ?? "-"],
+      ["MOQ (kg) / 最小起订量", p.moq_kg ?? "-"],
+      ["Packaging (kg/jute bag) / 包装(每麻袋kg)", p.packaging_kg_per_jute ?? "-"],
+      ["Ready stock / 现货", p.ready_stock ? "Yes / 有" : "No / 无 (made to order)"],
+      ["Price (IDR/kg) / 价格(印尼盾/kg)", p.price_idr_per_kg ?? "-"],
+      ["Price (RMB/kg) / 价格(人民币/kg)", p.price_rmb_per_kg ?? "-"],
+      ["FOB price / FOB价", p.fob_price ?? "-"],
+      ["CIF price / CIF价", p.cif_price ?? "-"],
+      ["Certificates / 证书", p.certificate_docs || "See certificate guide / 见证书指南"],
+    ];
+    rows.forEach((r) => ws.addRow(r));
+    ws.getColumn(1).font = { bold: true };
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename=spec-sheet-${p.id}.xlsx`);
+    await wb.xlsx.write(res);
+    res.end();
+  });
+
+  // ---- Product spec sheet (Word) ----
+  router.get("/catalog/:id/docx", async (req, res) => {
+    const p = db.prepare("SELECT * FROM catalog_products WHERE id=?").get(req.params.id);
+    if (!p) return res.status(404).send("Product not found");
+
+    const row = (label, value) => new TableRow({ children: [
+      new TableCell({ width: { size: 40, type: WidthType.PERCENTAGE }, children: [new Paragraph({ children: [new TextRun({ text: label, bold: true })] })] }),
+      new TableCell({ width: { size: 60, type: WidthType.PERCENTAGE }, children: [new Paragraph(String(value ?? "-"))] }),
+    ]});
+
+    const doc = new Document({
+      sections: [{
+        children: [
+          new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: `${p.name} — Product Spec Sheet / 产品规格表`, bold: true })] }),
+          new Paragraph({ text: `Category / 类别: ${p.category}`, spacing: { after: 200 } }),
+          new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [
+            row("Grade / 等级", p.grade),
+            row("Process / 处理法", p.process),
+            row("Altitude / 海拔", p.altitude),
+            row("Variety / 品种", p.variety),
+            row("Moisture % / 水分含量", p.moisture_pct),
+            row("Defect % / 瑕疵率", p.defect_pct),
+            row("MOQ (kg) / 最小起订量", p.moq_kg),
+            row("Packaging (kg/jute bag) / 包装(每麻袋kg)", p.packaging_kg_per_jute),
+            row("Ready stock / 现货", p.ready_stock ? "Yes / 有" : "No / 无"),
+            row("Price (IDR/kg) / 价格(印尼盾/kg)", p.price_idr_per_kg),
+            row("Price (RMB/kg) / 价格(人民币/kg)", p.price_rmb_per_kg),
+            row("Certificates / 证书", p.certificate_docs || "See certificate guide"),
+          ]}),
+        ],
+      }],
+    });
+
+    const buf = await Packer.toBuffer(doc);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", `attachment; filename=spec-sheet-${p.id}.docx`);
+    res.send(buf);
   });
 
   return router;

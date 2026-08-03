@@ -1,10 +1,32 @@
 const express = require("express");
 const db = require("../db");
 
+const CERTIFICATE_GUIDE = {
+  "Coffee": { certs: ["Certificate of Origin (Form E)", "Phytosanitary Certificate", "Fumigation Certificate (if wood pallet used)"], costNote: "Form E ~150,000–300,000 IDR via Ministry of Trade; Phytosanitary ~200,000–500,000 IDR via Ministry of Agriculture (Karantina); Fumigation ~1–3 RMB/CBM via licensed fumigation vendor." },
+  "Spices": { certs: ["Phytosanitary Certificate", "Certificate of Origin (Form E)", "Health Certificate"], costNote: "Similar to coffee; Health Certificate (Sertifikat Kesehatan) via BPOM/local health office, ~300,000–600,000 IDR." },
+  "Bird's Nest": { certs: ["CITES/Quarantine Certificate", "Health Certificate", "Certificate of Origin"], costNote: "Bird's nest requires additional quarantine clearance — budget 1,000,000–3,000,000 IDR and 1-2 weeks extra processing time." },
+  "Palm Oil": { certs: ["SNI Certificate", "ISPO Certificate", "Certificate of Origin (Form E)"], costNote: "ISPO certification is the most involved — typically pre-arranged at the plantation/refinery level, not per-shipment." },
+  "Cocoa Butter": { certs: ["Health Certificate", "Certificate of Origin (Form E)"], costNote: "Standard export documentation, ~500,000–1,000,000 IDR combined." },
+  "Seaweed": { certs: ["Phytosanitary Certificate", "Certificate of Origin"], costNote: "~300,000–600,000 IDR combined." },
+  "Halal Food": { certs: ["Halal Certificate (MUI/BPJPH)", "Health Certificate", "Certificate of Origin"], costNote: "Halal certification is the long-lead item — apply well ahead, can take 4-8 weeks and 1,000,000-5,000,000 IDR depending on product." },
+  "Coconut Products": { certs: ["Certificate of Origin (Form E)", "Health Certificate"], costNote: "~300,000–600,000 IDR combined." },
+  "Essential Oils": { certs: ["Certificate of Analysis (CoA)", "MSDS", "Certificate of Origin"], costNote: "CoA from an accredited lab ~500,000–1,500,000 IDR depending on analyte panel." },
+  "Tropical Fruits": { certs: ["Phytosanitary Certificate", "Certificate of Origin"], costNote: "Fresh fruit needs cold-chain-compatible phytosanitary clearance timed close to shipment date." },
+  "Tempeh": { certs: ["Health Certificate", "Halal Certificate (MUI)", "Certificate of Origin"], costNote: "Frozen/fresh product — confirm cold-chain export licensing with the freight forwarder." },
+};
+
 module.exports = function (io) {
   const router = express.Router();
   const emit = () => io.emit("data:change", { module: "trackb" });
   const emitBudget = () => io.emit("data:change", { module: "budget" });
+
+  router.get("/certificates/:category", (req, res) => {
+    const guide = CERTIFICATE_GUIDE[req.params.category];
+    if (!guide) return res.json({ certs: ["Certificate of Origin (Form E)"], costNote: "General export documentation — confirm specifics with your freight forwarder." });
+    res.json(guide);
+  });
+
+  router.get("/certificates", (req, res) => res.json(CERTIFICATE_GUIDE));
 
   router.get("/catalog", (req, res) => {
     const { category } = req.query;
@@ -16,11 +38,16 @@ module.exports = function (io) {
   });
 
   router.post("/catalog", (req, res) => {
-    const { category, name, grade, ready_stock, fob_price, cif_price, futures_price, certificate_docs } = req.body;
+    const {
+      category, name, grade, ready_stock, fob_price, cif_price, futures_price, certificate_docs,
+      process, altitude, defect_pct, moisture_pct, variety, moq_kg, packaging_kg_per_jute, price_idr_per_kg, price_rmb_per_kg,
+    } = req.body;
     const info = db.prepare(`
-      INSERT INTO catalog_products (category, name, grade, ready_stock, fob_price, cif_price, futures_price, certificate_docs)
-      VALUES (?,?,?,?,?,?,?,?)
-    `).run(category, name, grade || "", ready_stock ? 1 : 0, fob_price || 0, cif_price || 0, futures_price || 0, certificate_docs || "");
+      INSERT INTO catalog_products (category, name, grade, ready_stock, fob_price, cif_price, futures_price, certificate_docs,
+        process, altitude, defect_pct, moisture_pct, variety, moq_kg, packaging_kg_per_jute, price_idr_per_kg, price_rmb_per_kg)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(category, name, grade || "", ready_stock ? 1 : 0, fob_price || 0, cif_price || 0, futures_price || 0, certificate_docs || "",
+      process || "", altitude || "", defect_pct || null, moisture_pct || null, variety || "", moq_kg || null, packaging_kg_per_jute || null, price_idr_per_kg || null, price_rmb_per_kg || null);
     emit();
     res.json({ id: info.lastInsertRowid });
   });

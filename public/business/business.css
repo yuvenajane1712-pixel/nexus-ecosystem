@@ -1,7 +1,10 @@
 .subnav {
-  display: flex; overflow-x: auto; gap: 6px; padding: 10px 12px;
-  background: white; border-bottom: 1px solid #E5E7EB; position: sticky; top: 54px; z-index: 9;
-  -webkit-overflow-scrolling: touch;
+  padding: 10px 12px; background: white; border-bottom: 1px solid #E5E7EB;
+  position: sticky; top: 54px; z-index: 9;
+}
+.module-select {
+  width: 100%; margin: 0; font-weight: 700; font-size: 15px; color: #1F3864;
+  border: 2px solid #0F6E6E; border-radius: 12px; padding: 12px 14px; background: #EAF1F1;
 }
 .subnav-btn {
   flex: 0 0 auto; background: #F0F2F2; color: #444; border: none; border-radius: 20px;
@@ -12,3 +15,37 @@
 .hidden { display: none !important; }
 .mini-tag { display: inline-block; background: #EAF1F1; color: #0F6E6E; font-size: 11px; padding: 2px 8px; border-radius: 20px; margin-left: 6px; }
 .export-link { display: inline-block; margin-top: 6px; font-size: 12px; color: #0F6E6E; font-weight: 600; text-decoration: none; }
+
+.status-select {
+  width: 100%; margin: 6px 0 0; padding: 8px 10px; border-radius: 10px; font-size: 12px; font-weight: 700;
+  border: none; color: white; background: #0F6E6E; -webkit-appearance: none; appearance: none;
+}
+.status-select.st-0 { background: #9CA3AF; }
+.status-select.st-1 { background: #60A5FA; }
+.status-select.st-2 { background: #34D399; }
+.status-select.st-3 { background: #FBBF24; color:#1C1C1E; }
+.status-select.st-4 { background: #F97316; }
+.status-select.st-5 { background: #A78BFA; }
+.status-select.st-6 { background: #1E8449; }
+
+.item-card {
+  border: 1px solid #E5E7EB; border-radius: 12px; padding: 10px; margin-bottom: 8px; background: #FAFAFA;
+  display: flex; gap: 10px; align-items: flex-start;
+}
+.item-thumb { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; background: #EEE; flex-shrink: 0; }
+.item-info { flex: 1; font-size: 13px; }
+.item-info .name { font-weight: 700; }
+.item-info .meta2 { color: #666; font-size: 12px; }
+
+.order-card { background: white; border-radius: 14px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.order-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+.order-actions { display: flex; gap: 6px; margin-top: 8px; }
+.tracking-input { font-size: 12px; padding: 8px; margin: 6px 0 0; }
+
+.photo-input-wrap { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.photo-preview { width: 60px; height: 60px; border-radius: 10px; object-fit: cover; background: #EEE; }
+
+.action-option {
+  width: 100%; text-align: left; background: #F6F8F8; border: 1px solid #E5E7EB; border-radius: 12px;
+  padding: 14px; margin-bottom: 8px; font-size: 15px; font-weight: 600; color: #1F3864;
+}

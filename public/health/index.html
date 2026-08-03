@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
 <title>Health Tracker · NEXUS</title>
 <link rel="stylesheet" href="/style.css" />
+<link rel="stylesheet" href="/business/business.css" />
 <link rel="manifest" href="/health/manifest.json" />
 <meta name="theme-color" content="#1F3864" />
 </head>
@@ -26,8 +27,13 @@
     </div>
 
     <div class="card">
-      <h3>🤖 AI Insight (rule-based)</h3>
+      <h3>🤖 AI Coaching (rule-based)</h3>
       <div id="insightBox" class="meta">Loading...</div>
+    </div>
+
+    <div class="card">
+      <h3>📉 Weight vs. Goal</h3>
+      <div id="weightChart"><div class="empty">No weight logs yet</div></div>
     </div>
 
     <div class="section-title">Recent Logs</div>
@@ -44,27 +50,109 @@
     <a href="/budget/"><span class="ic">💰</span>Budget</a>
   </div>
 
-  <div class="sheet-overlay" id="logSheet">
+  <!-- action chooser -->
+  <div class="sheet-overlay" id="actionSheet">
     <div class="sheet">
-      <div class="close" onclick="NEXUS.closeSheet('logSheet')">Close ✕</div>
-      <h2>New Health Log</h2>
-      <label>Type</label>
-      <select id="l_type">
-        <option value="diet">Diet / meal</option>
-        <option value="workout">Workout</option>
-        <option value="metric">Metric (weight, BP, HR, etc.)</option>
-        <option value="supplement">Supplement / TCM</option>
-        <option value="grocery">Grocery purchase (auto-posts to Budget)</option>
+      <div class="close" onclick="NEXUS.closeSheet('actionSheet')">Close ✕</div>
+      <h2>What do you want to log?</h2>
+      <button class="action-option" onclick="openForm('dietSheet')">🍽 Diet / Meal</button>
+      <button class="action-option" onclick="openForm('workoutSheet')">🏃 Workout</button>
+      <button class="action-option" onclick="openForm('metricSheet')">📊 Metric (weight, BP, HR, SpO2)</button>
+      <button class="action-option" onclick="openForm('supplementSheet')">💊 Supplement / TCM</button>
+      <button class="action-option" onclick="openForm('grocerySheet')">🛒 Grocery purchase</button>
+    </div>
+  </div>
+
+  <!-- Diet form -->
+  <div class="sheet-overlay" id="dietSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('dietSheet')">Close ✕</div>
+      <h2>Log a Meal</h2>
+      <label>Meal name</label>
+      <input id="d_title" placeholder="e.g. lunch — chicken rice bowl" />
+      <label>Calories</label>
+      <input id="d_calories" type="number" placeholder="450" />
+      <div class="grid2">
+        <div><label>Protein (g)</label><input id="d_protein" type="number" placeholder="30" /></div>
+        <div><label>Fat (g)</label><input id="d_fat" type="number" placeholder="15" /></div>
+      </div>
+      <label>Carbs (g)</label>
+      <input id="d_carbs" type="number" placeholder="50" />
+      <button onclick="submitDiet()">Save Meal</button>
+    </div>
+  </div>
+
+  <!-- Workout form -->
+  <div class="sheet-overlay" id="workoutSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('workoutSheet')">Close ✕</div>
+      <h2>Log a Workout</h2>
+      <label>Activity type</label>
+      <select id="w_type">
+        <option>Gym — strength</option><option>Muay Thai</option><option>Swimming</option>
+        <option>Morning walk</option><option>Home bodyweight</option><option>Other</option>
       </select>
-      <label>Title</label>
-      <input id="l_title" placeholder="e.g. weight / lunch / Muay Thai" />
-      <label>Value / notes</label>
-      <input id="l_value" placeholder="e.g. 98.4kg / chicken + rice bowl" />
-      <label>Calories (if diet)</label>
-      <input id="l_calories" type="number" placeholder="450" />
-      <label>Cost RMB (if grocery)</label>
-      <input id="l_cost" type="number" placeholder="35" />
-      <button onclick="submitLog()">Save Log</button>
+      <label>Duration (min)</label>
+      <input id="w_duration" type="number" placeholder="45" />
+      <label>Calories burned (read from your watch)</label>
+      <input id="w_burned" type="number" placeholder="300" />
+      <label>Steps (if applicable)</label>
+      <input id="w_steps" type="number" placeholder="5000" />
+      <button onclick="submitWorkout()">Save Workout</button>
+    </div>
+  </div>
+
+  <!-- Metric form -->
+  <div class="sheet-overlay" id="metricSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('metricSheet')">Close ✕</div>
+      <h2>Log a Metric</h2>
+      <label>Metric type</label>
+      <select id="m_type" onchange="toggleMetricFields()">
+        <option value="weight">Weight (kg)</option>
+        <option value="bp">Blood Pressure</option>
+        <option value="hr">Heart Rate (bpm)</option>
+        <option value="spo2">Blood Oxygen (%)</option>
+        <option value="stool">Stool shape/volume</option>
+        <option value="urination">Urination frequency</option>
+      </select>
+      <div id="m_singleField">
+        <label>Value</label>
+        <input id="m_value" type="number" placeholder="e.g. 98.5" />
+      </div>
+      <div id="m_bpFields" class="hidden">
+        <div class="grid2">
+          <div><label>Systolic</label><input id="m_systolic" type="number" placeholder="120" /></div>
+          <div><label>Diastolic</label><input id="m_diastolic" type="number" placeholder="80" /></div>
+        </div>
+      </div>
+      <button onclick="submitMetric()">Save Metric</button>
+    </div>
+  </div>
+
+  <!-- Supplement form -->
+  <div class="sheet-overlay" id="supplementSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('supplementSheet')">Close ✕</div>
+      <h2>Log Supplement / TCM</h2>
+      <label>Name</label>
+      <input id="s_title" placeholder="e.g. Thyrozol / foot soak" />
+      <label>Dosage / notes</label>
+      <input id="s_value" placeholder="e.g. 1.5 pills" />
+      <button onclick="submitSupplement()">Save</button>
+    </div>
+  </div>
+
+  <!-- Grocery form -->
+  <div class="sheet-overlay" id="grocerySheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('grocerySheet')">Close ✕</div>
+      <h2>Log Grocery Purchase</h2>
+      <label>Item(s)</label>
+      <input id="g_title" placeholder="e.g. weekly veggies" />
+      <label>Cost (RMB) — auto-posts to Budget</label>
+      <input id="g_cost" type="number" placeholder="85" />
+      <button onclick="submitGrocery()">Save</button>
     </div>
   </div>
 

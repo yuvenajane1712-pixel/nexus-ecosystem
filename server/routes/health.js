@@ -17,11 +17,11 @@ module.exports = function (io) {
   });
 
   router.post("/logs", (req, res) => {
-    const { user_name, log_type, title, value, calories, cost_rmb } = req.body;
+    const { user_name, log_type, title, value, calories, protein, fat, carbs, cost_rmb } = req.body;
     const info = db.prepare(`
-      INSERT INTO health_logs (user_name, log_type, title, value, calories, cost_rmb)
-      VALUES (?,?,?,?,?,?)
-    `).run(user_name, log_type, title || "", value || "", calories || null, cost_rmb || null);
+      INSERT INTO health_logs (user_name, log_type, title, value, calories, protein, fat, carbs, cost_rmb)
+      VALUES (?,?,?,?,?,?,?,?,?)
+    `).run(user_name, log_type, title || "", value || "", calories || null, protein || null, fat || null, carbs || null, cost_rmb || null);
 
     emit();
 
@@ -55,17 +55,18 @@ module.exports = function (io) {
     res.json({ total_calories: rows.total_calories, latest_weight: latestWeight ? latestWeight.value : null });
   });
 
-  // rule-based "AI" insight: compares last 3 days of logs to each user's embedded targets
+  // rule-based "AI" insight: compares last 3 days of logs to each user's embedded targets,
+  // and suggests concrete burn actions if intake is running high
   router.get("/insight/:user", (req, res) => {
     const user = req.params.user;
     const targets = {
-      Yuvena: { calorieTarget: 1600, note: "no red meat, low glycemic load, high potassium priority" },
-      Nadine: { calorieTarget: 1500, note: "gluten/dairy/soy-free, thyroid-supportive, moderate protein" },
+      Yuvena: { calorieTarget: 1600, proteinTarget: 90, fatTarget: 50, carbTarget: 150, note: "no red meat, low glycemic load, high potassium priority" },
+      Nadine: { calorieTarget: 1500, proteinTarget: 80, fatTarget: 45, carbTarget: 140, note: "gluten/dairy/soy-free, thyroid-supportive, moderate protein" },
     };
     const t = targets[user] || targets.Yuvena;
 
     const last3days = db.prepare(`
-      SELECT date(created_at) d, SUM(calories) cals, COUNT(*) n
+      SELECT date(created_at) d, SUM(calories) cals, SUM(protein) prot, SUM(fat) fat, SUM(carbs) carb, COUNT(*) n
       FROM health_logs WHERE user_name=? AND log_type='diet' AND created_at >= date('now','-3 days')
       GROUP BY date(created_at)
     `).all(user);
@@ -75,18 +76,40 @@ module.exports = function (io) {
       WHERE user_name=? AND log_type='workout' AND created_at >= date('now','-7 days')
     `).get(user).c;
 
+    const todayBurn = db.prepare(`
+      SELECT COALESCE(SUM(CAST(value AS REAL)),0) c FROM health_logs
+      WHERE user_name=? AND log_type='workout' AND title='calories_burned' AND date(created_at)=date('now')
+    `).get(user).c;
+
     const insights = [];
-    const avgCal = last3days.length ? last3days.reduce((s, d) => s + (d.cals || 0), 0) / last3days.length : 0;
+    const n = last3days.length || 1;
+    const avgCal = last3days.reduce((s, d) => s + (d.cals || 0), 0) / n;
+    const avgProt = last3days.reduce((s, d) => s + (d.prot || 0), 0) / n;
+    const avgFat = last3days.reduce((s, d) => s + (d.fat || 0), 0) / n;
+    const avgCarb = last3days.reduce((s, d) => s + (d.carb || 0), 0) / n;
 
     if (avgCal === 0) {
       insights.push("No diet logs in the last 3 days — log meals to get a real read on intake.");
-    } else if (avgCal < t.calorieTarget * 0.7) {
-      insights.push(`Average intake (${Math.round(avgCal)} kcal) is well under your ${t.calorieTarget} kcal target — make sure you're not under-eating.`);
-    } else if (avgCal > t.calorieTarget * 1.2) {
-      insights.push(`Average intake (${Math.round(avgCal)} kcal) is above your ${t.calorieTarget} kcal target — worth reviewing portions this week.`);
     } else {
-      insights.push(`Average intake (${Math.round(avgCal)} kcal) is tracking close to your ${t.calorieTarget} kcal target — good consistency.`);
+      const diff = avgCal - t.calorieTarget;
+      if (diff > t.calorieTarget * 0.15) {
+        const stepsK = Math.max(1, Math.round(diff / 40)); // ~40 kcal burned per 1000 steps
+        const cardioMin = Math.max(10, Math.round(diff / 8)); // ~8 kcal/min moderate cardio
+        insights.push(`Average intake (${Math.round(avgCal)} kcal) is ~${Math.round(diff)} kcal over your ${t.calorieTarget} kcal target. To balance it: roughly ${stepsK}k extra steps, or ${cardioMin} min of cardio today.`);
+      } else if (diff < -t.calorieTarget * 0.3) {
+        insights.push(`Average intake (${Math.round(avgCal)} kcal) is well under your ${t.calorieTarget} kcal target — make sure you're not under-eating.`);
+      } else {
+        insights.push(`Average intake (${Math.round(avgCal)} kcal) is tracking close to your ${t.calorieTarget} kcal target — good consistency.`);
+      }
     }
+
+    if (avgProt > 0) {
+      insights.push(avgProt < t.proteinTarget * 0.8
+        ? `Protein averaging ${Math.round(avgProt)}g vs ${t.proteinTarget}g target — a bit low, add a protein source next meal.`
+        : `Protein averaging ${Math.round(avgProt)}g vs ${t.proteinTarget}g target — on track.`);
+    }
+    if (avgFat > t.fatTarget * 1.3) insights.push(`Fat intake (${Math.round(avgFat)}g) is running above the ${t.fatTarget}g target.`);
+    if (avgCarb > t.carbTarget * 1.3) insights.push(`Carb intake (${Math.round(avgCarb)}g) is running above the ${t.carbTarget}g target.`);
 
     if (workoutDays < 3) {
       insights.push(`Only ${workoutDays} workout day(s) logged this week — aim for the Mon/Wed/Fri gym + Tue/Thu/Sat walk pattern.`);
@@ -94,9 +117,33 @@ module.exports = function (io) {
       insights.push(`${workoutDays} workout days logged this week — on pace with your routine.`);
     }
 
+    if (todayBurn > 0) insights.push(`Logged ${todayBurn} kcal burned today from workouts.`);
+
     insights.push(`Dietary rule reminder: ${t.note}.`);
 
-    res.json({ user, avg_calories_3day: Math.round(avgCal), workout_days_7day: workoutDays, insights });
+    res.json({
+      user, avg_calories_3day: Math.round(avgCal), avg_protein_3day: Math.round(avgProt),
+      avg_fat_3day: Math.round(avgFat), avg_carbs_3day: Math.round(avgCarb),
+      workout_days_7day: workoutDays, insights,
+      note: "Rule-based coaching using your logged data against embedded targets — not a live AI call.",
+    });
+  });
+
+  // weight history + goal line for chart rendering
+  router.get("/weight-chart/:user", (req, res) => {
+    const user = req.params.user;
+    const goals = {
+      Yuvena: { start: 105, target: 65, unit: "kg" },
+      Nadine: { start: 62, target: 55, unit: "kg" },
+    };
+    const g = goals[user] || goals.Yuvena;
+    const logs = db.prepare(`
+      SELECT date(created_at) d, value FROM health_logs
+      WHERE user_name=? AND log_type='metric' AND title='weight'
+      ORDER BY created_at ASC
+    `).all(user);
+    const points = logs.map((l) => ({ date: l.d, weight: parseFloat(l.value) })).filter((p) => !isNaN(p.weight));
+    res.json({ user, goal_start: g.start, goal_target: g.target, points });
   });
 
   return router;

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
 <title>Pet Care Tracker · NEXUS</title>
 <link rel="stylesheet" href="/style.css" />
+<link rel="stylesheet" href="/business/business.css" />
 <link rel="manifest" href="/pet/manifest.json" />
 <meta name="theme-color" content="#1F3864" />
 </head>
@@ -12,16 +13,31 @@
   <div class="topbar">
     <span><span class="sync-dot" id="syncDot"></span>Pet Care Tracker</span>
     <select id="petSelect" style="width:auto;margin:0;padding:4px 8px;font-size:13px;">
-      <option value="馒头 (Mantou)">馒头 Mantou</option>
-      <option value="Cat 2">Cat 2</option>
-      <option value="Dog">Dog</option>
+      <option value="妹妹">妹妹 (Meimei)</option>
+      <option value="馒头">馒头 (Mantou)</option>
+      <option value="Mason">Mason</option>
     </select>
   </div>
 
   <main>
+    <div class="card" id="profileCard"></div>
+
+    <div class="card">
+      <h3>🍽 Today's Feeding Checklist</h3>
+      <div class="grid2">
+        <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="feed_AM" onchange="toggleFeed('AM')" style="width:auto;" /> AM meal fed</label>
+        <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="feed_PM" onchange="toggleFeed('PM')" style="width:auto;" /> PM meal fed</label>
+      </div>
+    </div>
+
     <div class="card">
       <h3>🤖 Health Status (AI auto-analysis)</h3>
       <div id="statusBox" class="meta">Loading...</div>
+    </div>
+
+    <div class="card">
+      <h3>📉 Weight Trend</h3>
+      <div id="weightChart"><div class="empty">No weight logs yet</div></div>
     </div>
 
     <div class="section-title">Recent Logs</div>
@@ -38,24 +54,81 @@
     <a href="/budget/"><span class="ic">💰</span>Budget</a>
   </div>
 
-  <div class="sheet-overlay" id="logSheet">
+  <div class="sheet-overlay" id="actionSheet">
     <div class="sheet">
-      <div class="close" onclick="NEXUS.closeSheet('logSheet')">Close ✕</div>
-      <h2>New Pet Log</h2>
-      <label>Type</label>
-      <select id="l_type">
-        <option value="diet">Diet / feeding</option>
-        <option value="health">Health metric (weight, stool, HR)</option>
-        <option value="supplement">Supplement / TCM</option>
-        <option value="grocery">Grocery purchase (auto-posts to Budget)</option>
+      <div class="close" onclick="NEXUS.closeSheet('actionSheet')">Close ✕</div>
+      <h2>What do you want to log?</h2>
+      <button class="action-option" onclick="openForm('dietSheet')">🍽 Diet / Feeding</button>
+      <button class="action-option" onclick="openForm('healthSheet')">📊 Health metric</button>
+      <button class="action-option" onclick="openForm('supplementSheet')">💊 Supplement / TCM</button>
+      <button class="action-option" onclick="openForm('grocerySheet')">🛒 Grocery purchase</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="dietSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('dietSheet')">Close ✕</div>
+      <h2>Log Feeding</h2>
+      <label>Food type</label>
+      <select id="d_food">
+        <option>Dry food (Nourse)</option>
+        <option>Home-cooked</option>
       </select>
-      <label>Title</label>
-      <input id="l_title" placeholder="e.g. weight / stool / dry food" />
-      <label>Value / notes</label>
-      <input id="l_value" placeholder="e.g. 3.8kg / healthy / 40g Nourse" />
-      <label>Cost RMB (if grocery)</label>
-      <input id="l_cost" type="number" placeholder="35" />
-      <button onclick="submitLog()">Save Log</button>
+      <label>Meal</label>
+      <select id="d_meal"><option>AM</option><option>PM</option></select>
+      <label>Amount (grams)</label>
+      <input id="d_grams" type="number" placeholder="40" />
+      <button onclick="submitDiet()">Save Feeding Log</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="healthSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('healthSheet')">Close ✕</div>
+      <h2>Log Health Metric</h2>
+      <label>Weight (kg)</label>
+      <input id="h_weight" type="number" step="0.01" placeholder="3.6" />
+      <label>Stool type</label>
+      <select id="h_stool">
+        <option value="">— not logging today —</option>
+        <option value="normal">Normal / healthy</option>
+        <option value="loose">Loose</option>
+        <option value="watery">Watery</option>
+        <option value="hard">Hard</option>
+        <option value="straining">Straining</option>
+        <option value="blood">Blood present</option>
+      </select>
+      <label>Urination count today</label>
+      <input id="h_urination" type="number" placeholder="3" />
+      <label>Heart rate (bpm, if measured)</label>
+      <input id="h_hr" type="number" placeholder="180" />
+      <label>Notes (context, e.g. "scared at vet")</label>
+      <input id="h_notes" placeholder="optional" />
+      <button onclick="submitHealth()">Save Health Log</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="supplementSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('supplementSheet')">Close ✕</div>
+      <h2>Log Supplement / TCM</h2>
+      <label>Name</label>
+      <input id="s_title" placeholder="e.g. joint supplement" />
+      <label>Dosage / notes</label>
+      <input id="s_value" placeholder="e.g. 1 tablet" />
+      <button onclick="submitSupplement()">Save</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="grocerySheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('grocerySheet')">Close ✕</div>
+      <h2>Log Grocery Purchase</h2>
+      <label>Item(s)</label>
+      <input id="g_title" placeholder="e.g. dry food 2kg bag" />
+      <label>Cost (RMB) — auto-posts to Budget</label>
+      <input id="g_cost" type="number" placeholder="120" />
+      <button onclick="submitGrocery()">Save</button>
     </div>
   </div>
 

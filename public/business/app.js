@@ -1,14 +1,10 @@
-// ===== Tab switching =====
+// ===== Tab switching (tap-to-choose dropdown) =====
 let activeTab = "nadylan";
-document.querySelectorAll(".subnav-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".subnav-btn").forEach((b) => b.classList.remove("active"));
-    document.querySelectorAll(".tab-panel").forEach((p) => p.classList.add("hidden"));
-    btn.classList.add("active");
-    activeTab = btn.dataset.tab;
-    document.getElementById("tab-" + activeTab).classList.remove("hidden");
-    loadTabData(activeTab);
-  });
+document.getElementById("moduleSelect").addEventListener("change", (e) => {
+  document.querySelectorAll(".tab-panel").forEach((p) => p.classList.add("hidden"));
+  activeTab = e.target.value;
+  document.getElementById("tab-" + activeTab).classList.remove("hidden");
+  loadTabData(activeTab);
 });
 
 function loadTabData(tab) {
@@ -21,15 +17,28 @@ function loadTabData(tab) {
   if (tab === "blockchain") loadBlockchain();
 }
 
-// ===== FAB: context-aware add button =====
+// ===== FAB: opens the right sheet, using a real tap-to-choose menu where more than one action exists =====
+function openActionSheet(options) {
+  const el = document.getElementById("actionSheetOptions");
+  el.innerHTML = options.map((o, i) => `<button class="action-option" onclick="actionChosen(${i})">${o.label}</button>`).join("");
+  window.__actionOptions = options;
+  NEXUS.openSheet("actionSheet");
+}
+function actionChosen(i) {
+  NEXUS.closeSheet("actionSheet");
+  window.__actionOptions[i].onSelect();
+}
+
 document.getElementById("fabBtn").addEventListener("click", () => {
   const sheetMap = {
     nadylan: "orderSheet", tours: "tourSheet", trackb: "trackbSheet",
-    crm: "crmSheet", indocha: null, blockchain: "bcSheet", social: null,
+    crm: "crmSheet", blockchain: "bcSheet",
   };
   if (activeTab === "indocha") {
-    const choice = prompt("Add what?\n1 = Grocery price\n2 = Recipe", "1");
-    NEXUS.openSheet(choice === "2" ? "recipeSheet" : "priceSheet");
+    openActionSheet([
+      { label: "🛒 Log a grocery price", onSelect: () => NEXUS.openSheet("priceSheet") },
+      { label: "📖 Add a recipe", onSelect: () => NEXUS.openSheet("recipeSheet") },
+    ]);
     return;
   }
   if (activeTab === "social") { alert("Use the Generate Script form above, or Auto-fill calendar."); return; }
@@ -38,8 +47,19 @@ document.getElementById("fabBtn").addEventListener("click", () => {
 });
 
 // =========================================================
-// NADYLAN TRACK A (existing)
+// NADYLAN TRACK A — item-based orders, 7-stage pipeline, logistics, tracking code
 // =========================================================
+const PIPELINE = [
+  { key: "lagi_dicari", label: "Lagi Dicari" },
+  { key: "sudah_ketemu", label: "Sudah Ketemu" },
+  { key: "sudah_bayar", label: "Sudah Bayar" },
+  { key: "sampai_cn_warehouse", label: "Sampai di China Warehouse" },
+  { key: "sudah_dikirim", label: "Sudah Dikirim" },
+  { key: "sampai_id_warehouse", label: "Sampai di Warehouse Indonesia" },
+  { key: "sampai_tujuan", label: "Sampai Tempat Tujuan" },
+];
+function pipelineIndex(key) { return Math.max(0, PIPELINE.findIndex(p => p.key === key)); }
+
 async function refreshAll() {
   loadOrders();
   loadTours();
@@ -48,28 +68,124 @@ async function refreshAll() {
 async function loadOrders() {
   const orders = await NEXUS.get("/api/business/orders");
   const el = document.getElementById("ordersList");
-  const open = orders.filter(o => o.status === "open").length;
+  const open = orders.filter(o => o.pipeline_status !== "sampai_tujuan").length;
   document.getElementById("openOrders").textContent = open;
 
   if (!orders.length) { el.innerHTML = '<div class="empty">No orders yet</div>'; }
   else {
-    el.innerHTML = orders.map(o => `
-      <div class="list-item">
-        <div>
-          <div><strong>${o.buyer_name}</strong> — ${o.product_summary || ""}</div>
-          <div class="meta">${NEXUS.fmtDate(o.created_at)} · fee ${o.fee_pct}% · total ${NEXUS.fmtMoney(o.total_payment)}</div>
-          <a class="export-link" href="/api/export/order/${o.id}/pdf" target="_blank">⬇ Export Invoice PDF</a>
-        </div>
-        <div style="text-align:right;">
-          <div class="tag ${o.status === 'completed' ? 'income' : 'expense'}">${o.status}</div>
-          <div class="meta" style="margin-top:6px;">profit ${NEXUS.fmtMoney(o.net_profit)}</div>
-          ${o.status === 'open' ? `<button class="small secondary" style="margin-top:6px;" onclick="completeOrder(${o.id})">Complete</button>` : ""}
-        </div>
-      </div>
-    `).join("");
+    el.innerHTML = orders.map(renderOrderCard).join("");
   }
   const tours = window.__tours || [];
   computeProfitSum(orders, tours);
+}
+
+function renderOrderCard(o) {
+  const stIdx = pipelineIndex(o.pipeline_status || "lagi_dicari");
+  const itemsHtml = (o.items || []).map(i => `
+    <div class="item-card">
+      ${i.photo_data ? `<img class="item-thumb" src="${i.photo_data}" />` : `<div class="item-thumb"></div>`}
+      <div class="item-info">
+        <div class="name">${i.name}${i.spec ? ' — ' + i.spec : ''}</div>
+        <div class="meta2">qty ${i.qty} × ${NEXUS.fmtMoney(i.unit_price)} = ${NEXUS.fmtMoney(i.qty * i.unit_price)} · CBM ${i.cbm}</div>
+      </div>
+      <button class="small secondary" onclick="deleteItem(${o.id},${i.id})">✕</button>
+    </div>
+  `).join("") || '<div class="empty">No products added yet</div>';
+
+  return `
+    <div class="order-card">
+      <div class="order-head">
+        <div>
+          <strong>${o.buyer_name}</strong>
+          <div class="meta">${NEXUS.fmtDate(o.created_at)} · fee ${o.fee_pct}%</div>
+        </div>
+        <button class="small secondary" onclick="deleteOrder(${o.id})">🗑 Delete</button>
+      </div>
+
+      <select class="status-select st-${stIdx}" onchange="updateStatus(${o.id}, this.value)">
+        ${PIPELINE.map(p => `<option value="${p.key}" ${p.key === o.pipeline_status ? 'selected' : ''}>${p.label}</option>`).join("")}
+      </select>
+
+      <div class="section-title" style="margin:12px 0 6px;">Products</div>
+      ${itemsHtml}
+      <button class="small secondary" onclick="openItemSheet(${o.id})">+ Add Product</button>
+
+      <div class="section-title" style="margin:12px 0 6px;">Logistics</div>
+      <div class="grid2">
+        <div><label>Rate / CBM (RMB)</label><input type="number" value="${o.logistics_rate_per_cbm || 0}" onchange="updateLogistics(${o.id})" id="lr_${o.id}" /></div>
+        <div><label>Total CBM</label><input type="number" value="${o.cbm_total || 0}" disabled /></div>
+      </div>
+      <div class="grid2">
+        <div><label>Supplier → China warehouse (RMB)</label><input type="number" value="${o.logistics_supplier_to_cn || 0}" onchange="updateLogistics(${o.id})" id="ls_${o.id}" /></div>
+        <div><label>ID warehouse → Buyer (RMB)</label><input type="number" value="${o.logistics_id_to_buyer || 0}" onchange="updateLogistics(${o.id})" id="lb_${o.id}" /></div>
+      </div>
+
+      <div class="card" style="margin-top:10px;">
+        <div class="row"><span class="label">Product cost</span><span class="val">${NEXUS.fmtMoney(o.product_cost)}</span></div>
+        <div class="row"><span class="label">Logistics cost</span><span class="val">${NEXUS.fmtMoney(o.logistics_cost)}</span></div>
+        <div class="row"><span class="label">Service fee</span><span class="val">${NEXUS.fmtMoney(o.service_fee)}</span></div>
+        <div class="row"><span class="label"><strong>Total payment</strong></span><span class="val"><strong>${NEXUS.fmtMoney(o.total_payment)}</strong></span></div>
+        <div class="row"><span class="label">Net profit</span><span class="val" style="color:#1E8449;">${NEXUS.fmtMoney(o.net_profit)}</span></div>
+      </div>
+
+      <label style="margin-top:10px;">Tracking code</label>
+      <input class="tracking-input" value="${o.tracking_code || ''}" placeholder="e.g. NX-2026-0001" onchange="updateTracking(${o.id}, this.value)" />
+
+      <a class="export-link" href="/api/export/order/${o.id}/pdf" target="_blank">⬇ Export Invoice PDF</a>
+    </div>
+  `;
+}
+
+async function updateStatus(orderId, val) { await NEXUS.put(`/api/business/orders/${orderId}/status`, { pipeline_status: val }); loadOrders(); }
+async function updateTracking(orderId, val) { await NEXUS.put(`/api/business/orders/${orderId}/tracking`, { tracking_code: val }); }
+async function updateLogistics(orderId) {
+  const logistics_rate_per_cbm = document.getElementById(`lr_${orderId}`).value;
+  const logistics_supplier_to_cn = document.getElementById(`ls_${orderId}`).value;
+  const logistics_id_to_buyer = document.getElementById(`lb_${orderId}`).value;
+  await NEXUS.put(`/api/business/orders/${orderId}/logistics`, { logistics_rate_per_cbm, logistics_supplier_to_cn, logistics_id_to_buyer });
+  loadOrders();
+}
+async function deleteOrder(orderId) {
+  if (!confirm("Delete this order and all its products?")) return;
+  await NEXUS.del(`/api/business/orders/${orderId}`);
+  loadOrders();
+}
+async function deleteItem(orderId, itemId) { await NEXUS.del(`/api/business/orders/${orderId}/items/${itemId}`); loadOrders(); }
+
+function openItemSheet(orderId) {
+  document.getElementById("i_orderId").value = orderId;
+  ["i_name","i_spec","i_price","i_cbm"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("i_qty").value = 1;
+  document.getElementById("i_photoPreview").style.display = "none";
+  window.__itemPhotoData = null;
+  NEXUS.openSheet("itemSheet");
+}
+
+function previewItemPhoto() {
+  const file = document.getElementById("i_photo").files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    window.__itemPhotoData = e.target.result;
+    const img = document.getElementById("i_photoPreview");
+    img.src = e.target.result;
+    img.style.display = "block";
+  };
+  reader.readAsDataURL(file);
+}
+
+async function submitItem() {
+  const orderId = document.getElementById("i_orderId").value;
+  const name = document.getElementById("i_name").value.trim();
+  const spec = document.getElementById("i_spec").value.trim();
+  const unit_price = document.getElementById("i_price").value;
+  const qty = document.getElementById("i_qty").value || 1;
+  const cbm = document.getElementById("i_cbm").value || 0;
+  if (!name) { alert("Product name is required."); return; }
+
+  await NEXUS.post(`/api/business/orders/${orderId}/items`, { name, spec, unit_price, qty, cbm, photo_data: window.__itemPhotoData });
+  NEXUS.closeSheet("itemSheet");
+  loadOrders();
 }
 
 async function loadTours() {
@@ -85,7 +201,7 @@ async function loadTours() {
       <div class="list-item">
         <div>
           <div><strong>${t.tier_name}</strong></div>
-          <div class="meta">${NEXUS.fmtDate(t.created_at)} · rev ${NEXUS.fmtMoney(t.revenue,'IDR')}</div>
+          <div class="meta">${NEXUS.fmtDate(t.created_at)} · rev ${NEXUS.fmtMoney(t.revenue,'IDR')} · booking fee ${NEXUS.fmtMoney(t.booking_fee,'IDR')}</div>
           <a class="export-link" href="/api/export/tour/${t.id}/pdf" target="_blank">⬇ Export Invoice PDF</a>
         </div>
         <div style="text-align:right;">
@@ -109,17 +225,13 @@ function computeProfitSum(orders, tours) {
 
 async function submitOrder() {
   const buyer_name = document.getElementById("o_buyer").value.trim();
-  const product_summary = document.getElementById("o_summary").value.trim();
-  const product_cost = document.getElementById("o_cost").value;
   const fee_pct = document.getElementById("o_fee").value || 10;
-  const logistics_cost = document.getElementById("o_logistics").value || 0;
   const urgency = document.getElementById("o_urgency").value || 1;
-  const status = document.getElementById("o_status").value;
-  if (!buyer_name || !product_cost) { alert("Buyer name and product cost are required."); return; }
+  if (!buyer_name) { alert("Buyer name is required."); return; }
 
-  await NEXUS.post("/api/business/orders", { buyer_name, product_summary, product_cost, fee_pct, logistics_cost, urgency, status });
+  await NEXUS.post("/api/business/orders", { buyer_name, fee_pct, urgency });
   NEXUS.closeSheet("orderSheet");
-  ["o_buyer","o_summary","o_cost","o_fee","o_logistics"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("o_buyer").value = "";
   loadOrders();
 }
 
@@ -138,16 +250,14 @@ async function submitTour() {
   loadTours();
 }
 
-async function completeOrder(id) { await NEXUS.put(`/api/business/orders/${id}/complete`, {}); loadOrders(); }
 async function completeTour(id) { await NEXUS.put(`/api/business/tours/${id}/complete`, {}); loadTours(); }
 
-document.getElementById("o_cost").addEventListener("input", suggestFee);
 document.getElementById("o_flags").addEventListener("change", suggestFee);
 async function suggestFee() {
-  const orderValue = Number(document.getElementById("o_cost").value) || 0;
   const flag = document.getElementById("o_flags").value;
   const res = await NEXUS.post("/api/business/fee-suggest", {
-    orderValue, isFirstTime: flag === "firsttime", isOemRebrand: flag === "oem",
+    orderValue: flag === "bulk" ? 60000 : (flag === "oem" ? 20000 : 0),
+    isFirstTime: flag === "firsttime", isOemRebrand: flag === "oem",
   });
   document.getElementById("o_fee").value = res.pct;
 }
@@ -164,9 +274,51 @@ async function loadCatalog() {
   el.innerHTML = Object.entries(byCategory).map(([cat, items]) => `
     <div class="card">
       <h3>${cat}</h3>
-      ${items.map(i => `<div class="row"><span class="label">${i.name}${i.grade ? ' ('+i.grade+')' : ''}</span><span class="val">${i.ready_stock ? '✅ ready stock' : '⏳ made to order'}</span></div>`).join("")}
+      ${items.map(i => `
+        <div style="border-top:1px solid #EEE; padding-top:8px; margin-top:8px;">
+          <div class="row"><span class="label"><strong>${i.name}</strong>${i.grade ? ' ('+i.grade+')' : ''}</span><span class="val">${i.ready_stock ? '✅ ready' : '⏳ order'}</span></div>
+          ${i.process || i.altitude || i.variety ? `<div class="meta">${[i.process, i.altitude, i.variety].filter(Boolean).join(' · ')}</div>` : ''}
+          ${i.moisture_pct || i.defect_pct ? `<div class="meta">Moisture ${i.moisture_pct||'-'}% · Defect ${i.defect_pct||'-'}%</div>` : ''}
+          ${i.price_idr_per_kg || i.price_rmb_per_kg ? `<div class="meta">${NEXUS.fmtMoney(i.price_idr_per_kg,'IDR')}/kg · ¥${i.price_rmb_per_kg||'-'}/kg</div>` : ''}
+          <div style="margin-top:4px;">
+            <a class="export-link" href="/api/export/catalog/${i.id}/xlsx">⬇ Excel</a> ·
+            <a class="export-link" href="/api/export/catalog/${i.id}/docx">⬇ Word</a>
+          </div>
+        </div>
+      `).join("")}
     </div>
   `).join("");
+}
+
+async function showCertGuide() {
+  const category = document.getElementById("cat_category").value;
+  const guide = await NEXUS.get(`/api/trackb/certificates/${encodeURIComponent(category)}`);
+  document.getElementById("certGuideBox").innerHTML = `
+    <strong>Certificates needed:</strong> ${guide.certs.join(", ")}<br>
+    <span class="meta">${guide.costNote}</span>
+  `;
+}
+
+async function submitCatalogProduct() {
+  const category = document.getElementById("cat_category").value;
+  const name = document.getElementById("cat_name").value.trim();
+  if (!name) { alert("Product name is required."); return; }
+  await NEXUS.post("/api/trackb/catalog", {
+    category, name,
+    grade: document.getElementById("cat_grade").value,
+    process: document.getElementById("cat_process").value,
+    altitude: document.getElementById("cat_altitude").value,
+    variety: document.getElementById("cat_variety").value,
+    moq_kg: document.getElementById("cat_moq").value,
+    moisture_pct: document.getElementById("cat_moisture").value,
+    defect_pct: document.getElementById("cat_defect").value,
+    packaging_kg_per_jute: document.getElementById("cat_packaging").value,
+    price_idr_per_kg: document.getElementById("cat_price_idr").value,
+    price_rmb_per_kg: document.getElementById("cat_price_rmb").value,
+    ready_stock: document.getElementById("cat_ready").checked,
+  });
+  ["cat_name","cat_grade","cat_process","cat_altitude","cat_variety","cat_moq","cat_moisture","cat_defect","cat_packaging","cat_price_idr","cat_price_rmb"].forEach(id => document.getElementById(id).value = "");
+  loadCatalog();
 }
 
 async function seedCatalog() {
@@ -271,24 +423,35 @@ async function deleteCRM(id) { await NEXUS.del(`/api/crm/${id}`); loadCRM(); }
 async function generateItinerary() {
   const destinations = document.getElementById("it_destinations").value.split(",").map(s => s.trim()).filter(Boolean);
   const days = document.getElementById("it_days").value;
+  const use_rideshare = document.getElementById("it_rideshare").checked;
   if (!destinations.length) { alert("Enter at least one destination."); return; }
-  const res = await NEXUS.post("/api/itinerary/generate", { destinations, days });
+  const res = await NEXUS.post("/api/itinerary/generate", { destinations, days, use_rideshare });
   const el = document.getElementById("itineraryResult");
   el.innerHTML = `
     <div class="section-title">Generated Itinerary</div>
     ${res.schedule.map(d => `
       <div class="card">
         <h3>Day ${d.day}</h3>
-        <div class="meta">Stops: ${d.stops.join(" → ")}</div>
-        <div class="meta">${d.dining}</div>
-        <div class="row"><span class="label">Ticket cost</span><span class="val">${NEXUS.fmtMoney(d.ticket_cost,'IDR')}</span></div>
+        <div class="meta" style="margin-bottom:8px;">${d.route_note}</div>
+        ${d.legs.map(l => `
+          <div style="border-top:1px solid #EEE; padding-top:8px; margin-top:8px;">
+            <div><strong>📍 ${l.stop}</strong></div>
+            <div class="meta">🏞 ${l.scenery}</div>
+            <div class="meta">🍜 ${l.food}</div>
+            ${l.rideshare ? `<div class="meta">🚗 ${l.rideshare.mode}: ${l.rideshare.from} → ${l.rideshare.to} (~${NEXUS.fmtMoney(l.rideshare.est_cost_idr,'IDR')})</div>` : ''}
+          </div>
+        `).join("")}
+        <div class="row" style="margin-top:8px;"><span class="label">Ticket cost</span><span class="val">${NEXUS.fmtMoney(d.ticket_cost,'IDR')}</span></div>
+        ${d.rideshare_total ? `<div class="row"><span class="label">Rideshare total</span><span class="val">${NEXUS.fmtMoney(d.rideshare_total,'IDR')}</span></div>` : ''}
       </div>
     `).join("")}
     <div class="card">
       <div class="row"><span class="label">Ticket total</span><span class="val">${NEXUS.fmtMoney(res.ticket_cost_total,'IDR')}</span></div>
+      <div class="row"><span class="label">Rideshare total</span><span class="val">${NEXUS.fmtMoney(res.rideshare_total,'IDR')}</span></div>
       <div class="row"><span class="label">Service fee (89K/day)</span><span class="val">${NEXUS.fmtMoney(res.service_fee_total,'IDR')}</span></div>
       <div class="row"><span class="label"><strong>Grand total</strong></span><span class="val"><strong>${NEXUS.fmtMoney(res.grand_total,'IDR')}</strong></span></div>
     </div>
+    <div class="meta" style="font-style:italic;">${res.note}</div>
   `;
 }
 

@@ -46,6 +46,18 @@ CREATE TABLE IF NOT EXISTS orders (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS order_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER,
+  name TEXT,
+  spec TEXT,           -- size/color/variant/material etc, free text
+  unit_price REAL DEFAULT 0,
+  qty INTEGER DEFAULT 1,
+  cbm REAL DEFAULT 0,   -- total CBM for this line (already qty-adjusted)
+  photo_data TEXT,      -- base64 data URL, optional
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS tours (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   tour_type TEXT,      -- 'bigbus' | 'private'
@@ -200,6 +212,51 @@ try { db.exec("ALTER TABLE clients ADD COLUMN trust_rating TEXT"); } catch (e) {
 try { db.exec("ALTER TABLE clients ADD COLUMN order_count INTEGER DEFAULT 0"); } catch (e) {}
 try { db.exec("ALTER TABLE clients ADD COLUMN order_value_total REAL DEFAULT 0"); } catch (e) {}
 try { db.exec("ALTER TABLE clients ADD COLUMN certificates TEXT"); } catch (e) {}
+
+// Nadylan Track A redesign: line-item based orders with a 7-stage status pipeline
+try { db.exec("ALTER TABLE orders ADD COLUMN pipeline_status TEXT DEFAULT 'lagi_dicari'"); } catch (e) {}
+try { db.exec("ALTER TABLE orders ADD COLUMN tracking_code TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE orders ADD COLUMN cbm_total REAL DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE orders ADD COLUMN logistics_rate_per_cbm REAL DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE orders ADD COLUMN logistics_supplier_to_cn REAL DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE orders ADD COLUMN logistics_id_to_buyer REAL DEFAULT 0"); } catch (e) {}
+
+// Track B: detailed spec fields (esp. coffee) + certificates
+try { db.exec("ALTER TABLE catalog_products ADD COLUMN process TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE catalog_products ADD COLUMN altitude TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE catalog_products ADD COLUMN defect_pct REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE catalog_products ADD COLUMN moisture_pct REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE catalog_products ADD COLUMN variety TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE catalog_products ADD COLUMN moq_kg REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE catalog_products ADD COLUMN packaging_kg_per_jute REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE catalog_products ADD COLUMN price_idr_per_kg REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE catalog_products ADD COLUMN price_rmb_per_kg REAL"); } catch (e) {}
+
+// Guangzhou Mate: booking fee
+try { db.exec("ALTER TABLE tours ADD COLUMN booking_fee REAL DEFAULT 0"); } catch (e) {}
+
+// Health logs: macro breakdown
+try { db.exec("ALTER TABLE health_logs ADD COLUMN protein REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE health_logs ADD COLUMN fat REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE health_logs ADD COLUMN carbs REAL"); } catch (e) {}
+
+// Pet logs: structured fields for distinct forms
+try { db.exec("ALTER TABLE pet_logs ADD COLUMN weight_kg REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE pet_logs ADD COLUMN stool_type TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE pet_logs ADD COLUMN urination_count INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE pet_logs ADD COLUMN heart_rate INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE pet_logs ADD COLUMN food_grams REAL"); } catch (e) {}
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS pet_feeding_checklist (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  pet_name TEXT,
+  log_date TEXT,
+  meal TEXT,          -- 'AM' | 'PM'
+  fed INTEGER DEFAULT 0,
+  UNIQUE(pet_name, log_date, meal)
+);
+`);
 
 // seed baseline config constants (only once)
 const defaults = {
