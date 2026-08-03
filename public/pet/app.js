@@ -55,6 +55,8 @@ async function refreshAll() {
     chartEl.innerHTML = NEXUS.lineChart({ points, unit: "kg", color: "#8B5CF6" });
   }
 
+  await loadPetSupplements();
+
   const logs = await NEXUS.get(`/api/pet/logs?pet_name=${encodeURIComponent(pet)}`);
   const el = document.getElementById("logsList");
   if (!logs.length) { el.innerHTML = '<div class="empty">No logs yet</div>'; return; }
@@ -126,5 +128,41 @@ async function deleteLog(id) {
   refreshAll();
 }
 
+async function loadPetSupplements() {
+  const pet = currentPet();
+  const list = await NEXUS.get(`/api/supplements/pet/${encodeURIComponent(pet)}`);
+  const el = document.getElementById("petSupplementList");
+  if (!list.length) { el.innerHTML = '<div class="empty">None added yet</div>'; return; }
+  el.innerHTML = list.map(s => `
+    <div class="row">
+      <label style="display:flex;align-items:center;gap:8px;flex:1;">
+        <input type="checkbox" ${s.taken_today ? 'checked' : ''} onchange="togglePetSupplement(${s.id}, this.checked)" style="width:auto;" />
+        ${s.name} <span class="meta">(${s.portion})</span>
+      </label>
+      <button class="small secondary" onclick="deletePetSupplement(${s.id})">✕</button>
+    </div>
+  `).join("");
+}
+
+async function togglePetSupplement(id, taken) {
+  await NEXUS.put(`/api/supplements/${id}/check`, { taken });
+}
+
+async function submitPetSupplementDef() {
+  const name = document.getElementById("psup_name").value.trim();
+  const portion = document.getElementById("psup_portion").value.trim();
+  if (!name) { alert("Name is required."); return; }
+  await NEXUS.post("/api/supplements", { owner_type: "pet", owner_name: currentPet(), name, portion });
+  NEXUS.closeSheet("petSupplementDefSheet");
+  ["psup_name","psup_portion"].forEach(id => document.getElementById(id).value = "");
+  loadPetSupplements();
+}
+
+async function deletePetSupplement(id) {
+  await NEXUS.del(`/api/supplements/${id}`);
+  loadPetSupplements();
+}
+
 NEXUS.onChange("pet", refreshAll);
+NEXUS.onChange("supplements", () => loadPetSupplements());
 refreshAll();

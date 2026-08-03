@@ -31,6 +31,12 @@
     </div>
 
     <div class="card">
+      <h3>💊 Supplements</h3>
+      <div id="petSupplementList"><div class="empty">None added yet</div></div>
+      <button class="small secondary" style="margin-top:8px;" onclick="NEXUS.openSheet('petSupplementDefSheet')">+ Add supplement</button>
+    </div>
+
+    <div class="card">
       <h3>🤖 Health Status (AI auto-analysis)</h3>
       <div id="statusBox" class="meta">Loading...</div>
     </div>
@@ -117,6 +123,18 @@
       <label>Dosage / notes</label>
       <input id="s_value" placeholder="e.g. 1 tablet" />
       <button onclick="submitSupplement()">Save</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="petSupplementDefSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('petSupplementDefSheet')">Close ✕</div>
+      <h2>Add Pet Supplement</h2>
+      <label>Name</label>
+      <input id="psup_name" placeholder="e.g. Joint supplement" />
+      <label>Portion (g or pc)</label>
+      <input id="psup_portion" placeholder="e.g. 5g or 1 pc" />
+      <button onclick="submitPetSupplementDef()">Add</button>
     </div>
   </div>
 

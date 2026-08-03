@@ -358,6 +358,59 @@ CREATE TABLE IF NOT EXISTS bathroom_log (
 );
 `);
 try { db.exec("ALTER TABLE health_logs ADD COLUMN grocery_grams REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE grocery_prices ADD COLUMN total_weight_g REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE grocery_prices ADD COLUMN total_price REAL"); } catch (e) {}
+
+// Track A: product catalog with unlimited variant prices
+db.exec(`
+CREATE TABLE IF NOT EXISTS track_a_products (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT,
+  description TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS track_a_variants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER,
+  spec_label TEXT,
+  price REAL,
+  currency TEXT DEFAULT 'RMB',
+  created_at TEXT DEFAULT (datetime('now'))
+);
+`);
+try { db.exec("ALTER TABLE order_items ADD COLUMN track_a_variant_id INTEGER"); } catch (e) {}
+
+// Guangzhou Mate: client + pax breakdown + cost/payment fields
+try { db.exec("ALTER TABLE tours ADD COLUMN client_name TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN travel_date TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN pax_adults INTEGER DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN pax_children INTEGER DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN pax_infants INTEGER DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN pax_elderly INTEGER DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN amount_client_pays REAL DEFAULT 0"); } catch (e) {}
+
+// People: weight goal + target date, water target
+try { db.exec("ALTER TABLE people ADD COLUMN goal_weight_kg REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE people ADD COLUMN goal_date TEXT"); } catch (e) {}
+
+// Supplements: per-person and per-pet, with daily tick checklist
+db.exec(`
+CREATE TABLE IF NOT EXISTS supplement_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_type TEXT,       -- 'person' | 'pet'
+  owner_name TEXT,
+  name TEXT,
+  portion TEXT,          -- e.g. "500mg" or "1 tablet" or "5g"
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS supplement_checklist (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  supplement_id INTEGER,
+  log_date TEXT,
+  taken INTEGER DEFAULT 0,
+  UNIQUE(supplement_id, log_date)
+);
+`);
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS pet_feeding_checklist (
@@ -380,7 +433,11 @@ const defaults = {
   utilities_cap_rmb: "80",
   transport_cap_rmb: "200",
   revenue_goal_idr: "5000000000",
-  revenue_goal_deadline: "2026-12-31"
+  revenue_goal_deadline: "2026-12-31",
+  bank_name: "",
+  bank_account_name: "",
+  bank_account_number: "",
+  company_name: "Nadylan",
 };
 const insertDefault = db.prepare("INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)");
 for (const [k, v] of Object.entries(defaults)) insertDefault.run(k, v);

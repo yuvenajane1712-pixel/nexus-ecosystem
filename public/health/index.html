@@ -60,6 +60,27 @@
     </div>
 
     <div class="card">
+      <h3>💧 Water Intake</h3>
+      <div class="row"><span class="label">Today</span><span class="val" id="waterToday">—</span></div>
+      <div class="progress"><div id="waterBar" style="width:0%"></div></div>
+      <button class="small secondary" style="margin-top:8px;" onclick="NEXUS.openSheet('waterSheet')">+ Log water</button>
+    </div>
+
+    <div class="card">
+      <h3>🔥 Calories Eaten vs Burned</h3>
+      <div class="row"><span class="label">Eaten today</span><span class="val" id="calEaten">—</span></div>
+      <div class="row"><span class="label">Burned (workout)</span><span class="val" id="calBurned">—</span></div>
+      <div class="row"><span class="label"><strong>Net</strong></span><span class="val" id="calNet">—</span></div>
+      <div class="row"><span class="label">Remaining vs target</span><span class="val" id="calRemaining">—</span></div>
+    </div>
+
+    <div class="card">
+      <h3>💊 Supplements</h3>
+      <div id="supplementList"><div class="empty">None added yet</div></div>
+      <button class="small secondary" style="margin-top:8px;" onclick="NEXUS.openSheet('supplementDefSheet')">+ Add supplement</button>
+    </div>
+
+    <div class="card">
       <h3>🤖 AI Coaching</h3>
       <div id="insightBox" class="meta">Loading...</div>
     </div>
@@ -90,7 +111,8 @@
       <button class="action-option" onclick="openForm('mealSheet')">🍽 Meal (breakfast/lunch/dinner/snack)</button>
       <button class="action-option" onclick="openForm('workoutSheet')">🏃 Workout</button>
       <button class="action-option" onclick="openForm('metricSheet')">📊 Metric (weight, BP, HR, SpO2)</button>
-      <button class="action-option" onclick="openForm('supplementSheet')">💊 Supplement / TCM</button>
+      <button class="action-option" onclick="NEXUS.closeSheet('actionSheet');NEXUS.openSheet('waterSheet')">💧 Water</button>
+      <button class="action-option" onclick="openForm('supplementSheet')">🌿 TCM (one-off log)</button>
       <button class="action-option" onclick="openForm('grocerySheet')">🛒 Grocery purchase</button>
       <button class="action-option" onclick="openForm('personSheet')">👤 Add a person</button>
     </div>
@@ -242,7 +264,31 @@
       <input id="up_age" type="number" />
       <label>Goal weight (kg, optional — affects calorie target)</label>
       <input id="up_goal" type="number" />
+      <label>Goal date (target)</label>
+      <input id="up_goal_date" type="date" />
       <button onclick="submitPersonUpdate()">Save</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="waterSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('waterSheet')">Close ✕</div>
+      <h2>Log Water</h2>
+      <label>Amount (ml)</label>
+      <input id="water_ml" type="number" placeholder="250" />
+      <button onclick="submitWater()">Save</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="supplementDefSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('supplementDefSheet')">Close ✕</div>
+      <h2>Add Supplement</h2>
+      <label>Name</label>
+      <input id="sup_name" placeholder="e.g. Vitamin D" />
+      <label>Portion</label>
+      <input id="sup_portion" placeholder="e.g. 1 tablet" />
+      <button onclick="submitSupplementDef()">Add</button>
     </div>
   </div>
 

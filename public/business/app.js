@@ -70,6 +70,10 @@ async function loadFxRate() {
   const cfg = await NEXUS.get("/api/config");
   document.getElementById("fx_current").textContent = cfg.fx_rate_idr_per_rmb;
   document.getElementById("fx_rate_input").placeholder = cfg.fx_rate_idr_per_rmb;
+  document.getElementById("bank_company").value = cfg.company_name || "";
+  document.getElementById("bank_name").value = cfg.bank_name || "";
+  document.getElementById("bank_account_name").value = cfg.bank_account_name || "";
+  document.getElementById("bank_account_number").value = cfg.bank_account_number || "";
 }
 
 async function updateFxRate() {
@@ -80,7 +84,87 @@ async function updateFxRate() {
   loadFxRate();
 }
 
+async function updateBankSetting(key, value) {
+  await NEXUS.put(`/api/config/${key}`, { value });
+}
+
+async function loadTACatalog() {
+  const products = await NEXUS.get("/api/business/products-catalog");
+  const el = document.getElementById("taCatalogList");
+  if (!products.length) { el.innerHTML = '<div class="empty">No products yet</div>'; }
+  else {
+    el.innerHTML = products.map(p => `
+      <div class="card">
+        <div class="row"><span class="label"><strong>${p.name}</strong></span><button class="small secondary" onclick="deleteTAProduct(${p.id})">🗑</button></div>
+        ${p.description ? `<div class="meta">${p.description}</div>` : ''}
+        ${(p.variants || []).map(v => `
+          <div class="row"><span class="label">${v.spec_label}</span><span class="val">${NEXUS.fmtMoney(v.price, v.currency)} <a href="#" onclick="deleteTAVariant(${v.id});return false;">✕</a></span></div>
+        `).join("")}
+        <button class="small secondary" style="margin-top:6px;" onclick="openTAVariantSheet(${p.id})">+ Add price variant</button>
+      </div>
+    `).join("");
+  }
+  // also refresh the item-sheet catalog picker
+  const pick = document.getElementById("i_catalogPick");
+  let options = '<option value="">— manual entry —</option>';
+  products.forEach(p => (p.variants || []).forEach(v => {
+    options += `<option value="${p.id}|${v.id}|${p.name}|${v.spec_label}|${v.price}|${v.currency}">${p.name} — ${v.spec_label} (${NEXUS.fmtMoney(v.price, v.currency)})</option>`;
+  }));
+  pick.innerHTML = options;
+}
+
+function fillFromCatalog() {
+  const val = document.getElementById("i_catalogPick").value;
+  if (!val) return;
+  const [productId, variantId, name, spec, price, currency] = val.split("|");
+  document.getElementById("i_name").value = name;
+  document.getElementById("i_price").value = price;
+  document.getElementById("i_currency").value = currency;
+  document.getElementById("tav_productId") && (window.__lastVariantId = variantId);
+}
+
+async function submitTAProduct() {
+  const name = document.getElementById("ta_name").value.trim();
+  const description = document.getElementById("ta_desc").value.trim();
+  if (!name) { alert("Product name is required."); return; }
+  await NEXUS.post("/api/business/products-catalog", { name, description });
+  NEXUS.closeSheet("taProductSheet");
+  ["ta_name","ta_desc"].forEach(id => document.getElementById(id).value = "");
+  loadTACatalog();
+}
+
+async function deleteTAProduct(id) {
+  if (!confirm("Delete this product and all its variants?")) return;
+  await NEXUS.del(`/api/business/products-catalog/${id}`);
+  loadTACatalog();
+}
+
+function openTAVariantSheet(productId) {
+  document.getElementById("tav_productId").value = productId;
+  ["tav_label","tav_price"].forEach(id => document.getElementById(id).value = "");
+  NEXUS.openSheet("taVariantSheet");
+}
+
+async function submitTAVariant() {
+  const productId = document.getElementById("tav_productId").value;
+  const spec_label = document.getElementById("tav_label").value.trim();
+  const price = document.getElementById("tav_price").value;
+  const currency = document.getElementById("tav_currency").value;
+  if (!spec_label || !price) { alert("Spec label and price are required."); return; }
+  await NEXUS.post(`/api/business/products-catalog/${productId}/variants`, { spec_label, price, currency });
+  NEXUS.closeSheet("taVariantSheet");
+  loadTACatalog();
+}
+
+async function deleteTAVariant(variantId) {
+  const products = await NEXUS.get("/api/business/products-catalog");
+  const owner = products.find(p => (p.variants || []).some(v => v.id === variantId));
+  if (owner) await NEXUS.del(`/api/business/products-catalog/${owner.id}/variants/${variantId}`);
+  loadTACatalog();
+}
+
 async function loadOrders() {
+  await loadTACatalog();
   const orders = await NEXUS.get("/api/business/orders");
   const el = document.getElementById("ordersList");
   const open = orders.filter(o => o.pipeline_status !== "sampai_tujuan").length;
@@ -180,6 +264,7 @@ function openItemSheet(orderId) {
   ["i_name","i_price","i_cbm","i_tech_params","i_tech_model","i_tech_variant","i_apparel_size","i_apparel_color","i_apparel_material","i_general_grade","i_general_moq","i_general_volume"].forEach(id => document.getElementById(id).value = "");
   document.getElementById("i_qty").value = 1;
   document.getElementById("i_category").value = "tech";
+  document.getElementById("i_catalogPick").value = "";
   toggleCategoryFields();
   document.getElementById("i_photoPreview").style.display = "none";
   window.__itemPhotoData = null;
@@ -239,7 +324,8 @@ async function loadTours() {
     el.innerHTML = tours.map(t => `
       <div class="list-item">
         <div>
-          <div><strong>${t.tier_name}</strong></div>
+          <div><strong>${t.tier_name}</strong> ${t.client_name ? '— ' + t.client_name : ''}</div>
+          <div class="meta">${t.travel_date || ''} ${t.pax_adults||t.pax_children||t.pax_infants||t.pax_elderly ? `· ${t.pax_adults||0} adult, ${t.pax_children||0} child, ${t.pax_infants||0} infant, ${t.pax_elderly||0} elderly` : ''}</div>
           <div class="meta">${NEXUS.fmtDate(t.created_at)} · rev ${NEXUS.fmtMoney(t.revenue,'IDR')} · booking fee ${NEXUS.fmtMoney(t.booking_fee,'IDR')}</div>
           <a class="export-link" href="/api/export/tour/${t.id}/pdf" target="_blank">⬇ Export Invoice PDF</a>
         </div>
@@ -280,12 +366,21 @@ async function submitTour() {
   const pax_or_days = document.getElementById("t_qty").value;
   const cost = document.getElementById("t_cost").value;
   const status = document.getElementById("t_status").value;
+  const client_name = document.getElementById("t_client").value.trim();
+  const travel_date = document.getElementById("t_date").value;
+  const pax_adults = document.getElementById("t_adults").value;
+  const pax_children = document.getElementById("t_children").value;
+  const pax_infants = document.getElementById("t_infants").value;
+  const pax_elderly = document.getElementById("t_elderly").value;
+  const amount_client_pays = document.getElementById("t_clientpays").value;
   if (!pax_or_days || !cost) { alert("Pax/days and cost are required."); return; }
 
-  await NEXUS.post("/api/business/tours", { tour_type, tier_name, pax_or_days, price_per_unit, cost, status });
+  await NEXUS.post("/api/business/tours", {
+    tour_type, tier_name, pax_or_days, price_per_unit, cost, status,
+    client_name, travel_date, pax_adults, pax_children, pax_infants, pax_elderly, amount_client_pays,
+  });
   NEXUS.closeSheet("tourSheet");
-  document.getElementById("t_qty").value = "";
-  document.getElementById("t_cost").value = "";
+  ["t_qty","t_cost","t_client","t_date","t_adults","t_children","t_infants","t_elderly","t_clientpays"].forEach(id => document.getElementById(id).value = "");
   loadTours();
 }
 
@@ -661,15 +756,16 @@ async function loadPrices() {
   const el = document.getElementById("pricesList");
   const items = Object.entries(grouped);
   if (!items.length) { el.innerHTML = '<div class="empty">No prices logged yet</div>'; return; }
-  el.innerHTML = items.map(([item, list]) => `
+  el.innerHTML = items.map(([item, data]) => `
     <div class="card">
       <h3>${item}</h3>
-      ${list.map(p => `
+      ${data.entries.map(p => `
         <div class="row">
           <span class="label">${p.channel} ${p.cheapest ? '🏆' : ''}</span>
-          <span class="val">¥${p.unit_price} ${p.delivery_fee ? '+ ¥'+p.delivery_fee+' delivery' : ''}</span>
+          <span class="val">${p.price_per_100g !== null ? '¥'+p.price_per_100g+'/100g' : 'incomplete data'}</span>
         </div>
       `).join("")}
+      <div class="meta" style="margin-top:6px; font-weight:600; color:#0F6E6E;">✅ ${data.conclusion}</div>
     </div>
   `).join("");
 }
@@ -677,12 +773,13 @@ async function loadPrices() {
 async function submitPrice() {
   const item = document.getElementById("p_item").value.trim();
   const channel = document.getElementById("p_channel").value;
-  const unit_price = document.getElementById("p_price").value;
+  const total_weight_g = document.getElementById("p_weight").value;
+  const total_price = document.getElementById("p_price").value;
   const delivery_fee = document.getElementById("p_delivery").value;
-  if (!item || !unit_price) { alert("Item and price are required."); return; }
-  await NEXUS.post("/api/indocha/prices", { item, channel, unit_price, delivery_fee });
+  if (!item || !total_weight_g || !total_price) { alert("Item, weight, and price are required."); return; }
+  await NEXUS.post("/api/indocha/prices", { item, channel, total_weight_g, total_price, delivery_fee });
   NEXUS.closeSheet("priceSheet");
-  ["p_item","p_price","p_delivery"].forEach(id => document.getElementById(id).value = "");
+  ["p_item","p_weight","p_price","p_delivery"].forEach(id => document.getElementById(id).value = "");
   loadPrices();
 }
 

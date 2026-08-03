@@ -80,13 +80,13 @@ async function refreshAll() {
     return;
   }
   currentPersonName = person.name;
-  goalWeight = null;
 
   document.getElementById("profileCard").innerHTML = `
     <h3>${person.name}</h3>
     <div class="row"><span class="label">Height / Weight</span><span class="val">${person.height_cm || '-'}cm / ${person.weight_kg || '-'}kg</span></div>
     <div class="row"><span class="label">Age / Gender</span><span class="val">${person.age || '-'} / ${person.gender}</span></div>
     <div class="row"><span class="label">Activity level</span><span class="val">${person.activity_level}</span></div>
+    ${person.goal_weight_kg ? `<div class="row"><span class="label">Goal</span><span class="val">${person.goal_weight_kg}kg by ${person.goal_date || '—'}</span></div>` : ''}
     ${person.no_red_meat || person.gluten_free || person.dairy_free || person.soy_free ? `<div class="meta">${[person.no_red_meat&&'no red meat', person.gluten_free&&'gluten-free', person.dairy_free&&'dairy-free', person.soy_free&&'soy-free'].filter(Boolean).join(' · ')}</div>` : ''}
     <button class="small secondary" style="margin-top:8px;" onclick="openUpdatePerson()">Update body info / goal weight</button>
   `;
@@ -99,6 +99,9 @@ async function refreshAll() {
   await loadWeightChart();
   await loadLogs();
   await loadBathroom();
+  await loadWater();
+  await loadCalorieBalance();
+  await loadSupplements();
 }
 
 function openUpdatePerson() {
@@ -107,6 +110,8 @@ function openUpdatePerson() {
     document.getElementById("up_height").value = p.height_cm || "";
     document.getElementById("up_weight").value = p.weight_kg || "";
     document.getElementById("up_age").value = p.age || "";
+    document.getElementById("up_goal").value = p.goal_weight_kg || "";
+    document.getElementById("up_goal_date").value = p.goal_date || "";
     NEXUS.openSheet("updatePersonSheet");
   });
 }
@@ -115,16 +120,81 @@ async function submitPersonUpdate() {
   const height_cm = document.getElementById("up_height").value;
   const weight_kg = document.getElementById("up_weight").value;
   const age = document.getElementById("up_age").value;
-  goalWeight = document.getElementById("up_goal").value || null;
+  const goal_weight_kg = document.getElementById("up_goal").value || null;
+  const goal_date = document.getElementById("up_goal_date").value || null;
   const people = await NEXUS.get("/api/people");
   const p = people.find(pp => pp.id === currentPersonId);
-  await NEXUS.put(`/api/people/${currentPersonId}`, { ...p, height_cm, weight_kg, age });
+  await NEXUS.put(`/api/people/${currentPersonId}`, { ...p, height_cm, weight_kg, age, goal_weight_kg, goal_date });
   NEXUS.closeSheet("updatePersonSheet");
   refreshAll();
 }
 
+async function loadWater() {
+  const data = await NEXUS.get(`/api/health/water-today/${encodeURIComponent(currentPersonName)}`);
+  const needs = await NEXUS.get(`/api/people/${currentPersonId}/daily-needs`);
+  const target = needs.water_target_ml || 2000;
+  document.getElementById("waterToday").textContent = `${data.ml_today} / ${target} ml`;
+  const pct = Math.min(100, (data.ml_today / target) * 100);
+  document.getElementById("waterBar").style.width = pct + "%";
+}
+
+async function submitWater() {
+  const ml = document.getElementById("water_ml").value;
+  if (!ml) { alert("Enter an amount."); return; }
+  await NEXUS.post("/api/health/logs", { user_name: currentPersonName, log_type: "water", title: "water", value: ml });
+  NEXUS.closeSheet("waterSheet");
+  document.getElementById("water_ml").value = "";
+  refreshAll();
+}
+
+async function loadCalorieBalance() {
+  const bal = await NEXUS.get(`/api/health/calorie-balance/${encodeURIComponent(currentPersonName)}`);
+  const needs = await NEXUS.get(`/api/people/${currentPersonId}/daily-needs`);
+  document.getElementById("calEaten").textContent = bal.eaten + " kcal";
+  document.getElementById("calBurned").textContent = bal.burned + " kcal";
+  document.getElementById("calNet").textContent = bal.net + " kcal";
+  if (needs.calorie_target) {
+    const remaining = needs.calorie_target - bal.net;
+    document.getElementById("calRemaining").textContent = `${remaining} kcal (of ${needs.calorie_target} target)`;
+  }
+}
+
+async function loadSupplements() {
+  const list = await NEXUS.get(`/api/supplements/person/${encodeURIComponent(currentPersonName)}`);
+  const el = document.getElementById("supplementList");
+  if (!list.length) { el.innerHTML = '<div class="empty">None added yet</div>'; return; }
+  el.innerHTML = list.map(s => `
+    <div class="row">
+      <label style="display:flex;align-items:center;gap:8px;flex:1;">
+        <input type="checkbox" ${s.taken_today ? 'checked' : ''} onchange="toggleSupplement(${s.id}, this.checked)" style="width:auto;" />
+        ${s.name} <span class="meta">(${s.portion})</span>
+      </label>
+      <button class="small secondary" onclick="deleteSupplement(${s.id})">✕</button>
+    </div>
+  `).join("");
+}
+
+async function toggleSupplement(id, taken) {
+  await NEXUS.put(`/api/supplements/${id}/check`, { taken });
+}
+
+async function submitSupplementDef() {
+  const name = document.getElementById("sup_name").value.trim();
+  const portion = document.getElementById("sup_portion").value.trim();
+  if (!name) { alert("Name is required."); return; }
+  await NEXUS.post("/api/supplements", { owner_type: "person", owner_name: currentPersonName, name, portion });
+  NEXUS.closeSheet("supplementDefSheet");
+  ["sup_name","sup_portion"].forEach(id => document.getElementById(id).value = "");
+  loadSupplements();
+}
+
+async function deleteSupplement(id) {
+  await NEXUS.del(`/api/supplements/${id}`);
+  loadSupplements();
+}
+
 async function loadNeeds() {
-  const url = `/api/people/${currentPersonId}/daily-needs` + (goalWeight ? `?goal_weight=${goalWeight}` : "");
+  const url = `/api/people/${currentPersonId}/daily-needs`;
   const needs = await NEXUS.get(url);
   const box = document.getElementById("needsBox");
   if (needs.error) { box.innerHTML = `<div class="empty">${needs.error}</div>`; return; }
@@ -333,4 +403,5 @@ async function deleteLog(id) {
 
 NEXUS.onChange("health", refreshAll);
 NEXUS.onChange("people", refreshAll);
+NEXUS.onChange("supplements", () => loadSupplements());
 refreshAll();

@@ -87,6 +87,51 @@ module.exports = function (io) {
     return { productCost, cbmTotal, logisticsCost, serviceFee, totalPayment, netProfit };
   }
 
+  // ---- Track A Product Catalog (unlimited price variants per product) ----
+  router.get("/products-catalog", (req, res) => {
+    const products = db.prepare("SELECT * FROM track_a_products ORDER BY name").all();
+    const variants = db.prepare("SELECT * FROM track_a_variants ORDER BY id").all();
+    products.forEach((p) => { p.variants = variants.filter((v) => v.product_id === p.id); });
+    res.json(products);
+  });
+
+  router.post("/products-catalog", (req, res) => {
+    const { name, description } = req.body;
+    if (!name) return res.status(400).json({ error: "name required" });
+    const info = db.prepare("INSERT INTO track_a_products (name, description) VALUES (?,?)").run(name, description || "");
+    emit();
+    res.json({ id: info.lastInsertRowid });
+  });
+
+  router.put("/products-catalog/:id", (req, res) => {
+    const { name, description } = req.body;
+    db.prepare("UPDATE track_a_products SET name=?, description=? WHERE id=?").run(name, description || "", req.params.id);
+    emit();
+    res.json({ ok: true });
+  });
+
+  router.delete("/products-catalog/:id", (req, res) => {
+    db.prepare("DELETE FROM track_a_variants WHERE product_id=?").run(req.params.id);
+    db.prepare("DELETE FROM track_a_products WHERE id=?").run(req.params.id);
+    emit();
+    res.json({ ok: true });
+  });
+
+  router.post("/products-catalog/:id/variants", (req, res) => {
+    const { spec_label, price, currency } = req.body;
+    if (!spec_label || !price) return res.status(400).json({ error: "spec_label and price required" });
+    const info = db.prepare("INSERT INTO track_a_variants (product_id, spec_label, price, currency) VALUES (?,?,?,?)")
+      .run(req.params.id, spec_label, Number(price), currency === "IDR" ? "IDR" : "RMB");
+    emit();
+    res.json({ id: info.lastInsertRowid });
+  });
+
+  router.delete("/products-catalog/:id/variants/:variantId", (req, res) => {
+    db.prepare("DELETE FROM track_a_variants WHERE id=?").run(req.params.variantId);
+    emit();
+    res.json({ ok: true });
+  });
+
   // ---- Orders (Nadylan Track A) — with nested line items ----
   router.get("/orders", (req, res) => {
     const orders = db.prepare("SELECT * FROM orders ORDER BY created_at DESC").all();
@@ -225,16 +270,26 @@ module.exports = function (io) {
   });
 
   router.post("/tours", (req, res) => {
-    const { tour_type, tier_name, pax_or_days, price_per_unit, cost, status } = req.body;
-    const revenue = (Number(pax_or_days) || 0) * (Number(price_per_unit) || 0);
+    const {
+      tour_type, tier_name, pax_or_days, price_per_unit, cost, status,
+      client_name, travel_date, pax_adults, pax_children, pax_infants, pax_elderly, amount_client_pays,
+    } = req.body;
+    // if an explicit amount the client pays is given, use that as revenue; otherwise fall back to pax/day × tier price
+    const computedRevenue = (Number(pax_or_days) || 0) * (Number(price_per_unit) || 0);
+    const revenue = amount_client_pays ? Number(amount_client_pays) : computedRevenue;
     const c = Number(cost) || 0;
     const bookingFee = revenue * 0.05;
     const margin = revenue - c;
 
     const info = db.prepare(`
-      INSERT INTO tours (tour_type, tier_name, pax_or_days, revenue, cost, margin, booking_fee, status)
-      VALUES (?,?,?,?,?,?,?,?)
-    `).run(tour_type, tier_name, pax_or_days || 0, revenue, c, margin, bookingFee, status || "open");
+      INSERT INTO tours (
+        tour_type, tier_name, pax_or_days, revenue, cost, margin, booking_fee, status,
+        client_name, travel_date, pax_adults, pax_children, pax_infants, pax_elderly, amount_client_pays
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(
+      tour_type, tier_name, pax_or_days || 0, revenue, c, margin, bookingFee, status || "open",
+      client_name || "", travel_date || "", pax_adults || 0, pax_children || 0, pax_infants || 0, pax_elderly || 0, Number(amount_client_pays) || 0
+    );
 
     emit();
 

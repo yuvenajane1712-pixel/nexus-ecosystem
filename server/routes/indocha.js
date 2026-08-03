@@ -5,27 +5,35 @@ module.exports = function (io) {
   const router = express.Router();
   const emit = () => io.emit("data:change", { module: "indocha" });
 
-  // ---- Grocery price comparison ----
+  // ---- Grocery price comparison — normalized per 100g, with a clear conclusion ----
   router.get("/prices", (req, res) => {
-    const rows = db.prepare("SELECT * FROM grocery_prices ORDER BY item, unit_price ASC").all();
-    // group by item, compute effective cost, flag cheapest
+    const rows = db.prepare("SELECT * FROM grocery_prices ORDER BY item").all();
     const byItem = {};
     rows.forEach((r) => {
-      const effective = r.unit_price + (r.delivery_fee || 0) / 10; // amortized over ~10 units, simple heuristic
+      const totalCost = (r.total_price || 0) + (r.delivery_fee || 0);
+      const per100g = r.total_weight_g > 0 ? (totalCost / r.total_weight_g) * 100 : null;
       if (!byItem[r.item]) byItem[r.item] = [];
-      byItem[r.item].push({ ...r, effective_unit_cost: effective });
+      byItem[r.item].push({ ...r, price_per_100g: per100g ? Math.round(per100g * 100) / 100 : null });
     });
-    Object.values(byItem).forEach((list) => {
-      list.sort((a, b) => a.effective_unit_cost - b.effective_unit_cost);
-      list.forEach((r, i) => (r.cheapest = i === 0));
+    const result = {};
+    Object.entries(byItem).forEach(([item, list]) => {
+      list.sort((a, b) => (a.price_per_100g ?? Infinity) - (b.price_per_100g ?? Infinity));
+      list.forEach((r, i) => (r.cheapest = i === 0 && r.price_per_100g !== null));
+      const cheapest = list.find((r) => r.cheapest);
+      result[item] = {
+        entries: list,
+        conclusion: cheapest ? `${cheapest.channel} is cheaper at ¥${cheapest.price_per_100g}/100g` : "Not enough data yet",
+      };
     });
-    res.json(byItem);
+    res.json(result);
   });
 
   router.post("/prices", (req, res) => {
-    const { item, channel, unit_price, delivery_fee } = req.body;
-    const info = db.prepare("INSERT INTO grocery_prices (item, channel, unit_price, delivery_fee) VALUES (?,?,?,?)")
-      .run(item, channel, Number(unit_price) || 0, Number(delivery_fee) || 0);
+    const { item, channel, total_weight_g, total_price, delivery_fee } = req.body;
+    const info = db.prepare(`
+      INSERT INTO grocery_prices (item, channel, total_weight_g, total_price, delivery_fee, unit_price)
+      VALUES (?,?,?,?,?,?)
+    `).run(item, channel, Number(total_weight_g) || 0, Number(total_price) || 0, Number(delivery_fee) || 0, Number(total_price) || 0);
     emit();
     res.json({ id: info.lastInsertRowid });
   });

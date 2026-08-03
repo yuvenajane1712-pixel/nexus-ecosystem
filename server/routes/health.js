@@ -233,5 +233,26 @@ module.exports = function (io) {
     res.json(estimateShelfLife(item));
   });
 
+  // water intake today
+  router.get("/water-today/:user", (req, res) => {
+    const row = db.prepare(`
+      SELECT COALESCE(SUM(CAST(value AS REAL)),0) ml FROM health_logs
+      WHERE user_name=? AND log_type='water' AND date(created_at)=date('now')
+    `).get(req.params.user);
+    res.json({ ml_today: row.ml });
+  });
+
+  // calories eaten vs burned today
+  router.get("/calorie-balance/:user", (req, res) => {
+    const eaten = db.prepare(`
+      SELECT COALESCE(SUM(calories),0) c FROM health_logs WHERE user_name=? AND log_type='diet' AND date(created_at)=date('now')
+    `).get(req.params.user).c;
+    const burned = db.prepare(`
+      SELECT COALESCE(SUM(CAST(value AS REAL)),0) c FROM health_logs
+      WHERE user_name=? AND log_type='workout' AND title='calories_burned' AND date(created_at)=date('now')
+    `).get(req.params.user).c;
+    res.json({ eaten, burned, net: eaten - burned });
+  });
+
   return router;
 };

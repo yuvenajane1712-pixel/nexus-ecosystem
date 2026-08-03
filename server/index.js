@@ -29,6 +29,7 @@ app.use("/api/social", require("./routes/social")(io));
 app.use("/api/itinerary", require("./routes/itinerary")(io));
 app.use("/api/export", require("./routes/export")());
 app.use("/api/people", require("./routes/people")(io));
+app.use("/api/supplements", require("./routes/supplements")(io));
 
 app.get("/api/ping", (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
