@@ -19,7 +19,7 @@
     <select id="moduleSelect" class="module-select">
       <option value="nadylan">📦 Nadylan Track A (China → Indonesia)</option>
       <option value="trackb">🌏 Nadylan Track B (Indonesia → China)</option>
-      <option value="crm">👥 CRM</option>
+      <option value="crm">👥 Contact Info</option>
       <option value="tours">🚌 Guangzhou Mate Tours</option>
       <option value="social">🎬 Social Media</option>
       <option value="indocha">🍲 Indocha Diary</option>
@@ -157,10 +157,7 @@
 
     <!-- ===== TAB: Blockchain ===== -->
     <section class="tab-panel hidden" id="tab-blockchain">
-      <div class="card">
-        <div class="row"><span class="label">Overall learning progress</span><span class="val" id="bcProgress">—</span></div>
-        <div class="progress"><div id="bcProgressBar" style="width:0%"></div></div>
-      </div>
+      <div class="section-title">Daily Notes</div>
       <div id="bcList"><div class="empty">No entries yet</div></div>
     </section>
   </main>
@@ -202,6 +199,7 @@
     <div class="sheet">
       <div class="close" onclick="NEXUS.closeSheet('itemSheet')">Close ✕</div>
       <h2>Add Product</h2>
+      <p class="meta">Same product with a different color/size/spec? Add it as its own product line — each one tracks its own price and qty.</p>
       <input type="hidden" id="i_orderId" />
       <div class="photo-input-wrap">
         <img id="i_photoPreview" class="photo-preview" src="" style="display:none;" />
@@ -209,8 +207,38 @@
       </div>
       <label>Product name</label>
       <input id="i_name" placeholder="e.g. Phone case" />
-      <label>Spec / color / variant</label>
-      <input id="i_spec" placeholder="e.g. Black, XL, Model A" />
+      <label>Category</label>
+      <select id="i_category" onchange="toggleCategoryFields()">
+        <option value="tech">Tech</option>
+        <option value="apparel">Apparel</option>
+        <option value="general">General goods</option>
+      </select>
+
+      <div id="i_techFields">
+        <label>Technical parameters</label>
+        <input id="i_tech_params" placeholder="e.g. 5000mAh, USB-C" />
+        <div class="grid2">
+          <div><label>Model</label><input id="i_tech_model" placeholder="e.g. X200" /></div>
+          <div><label>Variant</label><input id="i_tech_variant" placeholder="e.g. Pro" /></div>
+        </div>
+      </div>
+      <div id="i_apparelFields" class="hidden">
+        <div class="grid2">
+          <div><label>Size</label><input id="i_apparel_size" placeholder="e.g. XL" /></div>
+          <div><label>Color</label><input id="i_apparel_color" placeholder="e.g. Black" /></div>
+        </div>
+        <label>Material</label>
+        <input id="i_apparel_material" placeholder="e.g. Cotton" />
+      </div>
+      <div id="i_generalFields" class="hidden">
+        <div class="grid2">
+          <div><label>Quality grade</label><input id="i_general_grade" placeholder="e.g. Grade A" /></div>
+          <div><label>MOQ</label><input id="i_general_moq" type="number" placeholder="100" /></div>
+        </div>
+        <label>Volume</label>
+        <input id="i_general_volume" placeholder="e.g. 500ml" />
+      </div>
+
       <div class="grid2">
         <div><label>Unit price</label><input id="i_price" type="number" placeholder="5" /></div>
         <div><label>Currency</label><select id="i_currency"><option value="RMB">RMB</option><option value="IDR">IDR</option></select></div>
@@ -260,8 +288,8 @@
       <h2>New Track B Order</h2>
       <label>Chinese buyer name</label>
       <input id="b_buyer" placeholder="e.g. Guangzhou Coffee Co" />
-      <label>Product summary</label>
-      <input id="b_summary" placeholder="e.g. Gayo Arabica 1 ton" />
+      <label>Product (from catalog)</label>
+      <select id="b_product"></select>
       <label>Profit model</label>
       <select id="b_model" onchange="toggleProfitModel()">
         <option value="margin">Margin only (cost vs selling price)</option>
@@ -269,23 +297,23 @@
         <option value="both">Both — margin + fee combined</option>
       </select>
       <div id="b_marginFields">
-        <label>Cost price (RMB)</label>
-        <input id="b_cost" type="number" placeholder="30000" />
+        <label>Cost price</label>
+        <div class="grid2"><input id="b_cost" type="number" placeholder="30000" /><select id="b_cost_cur"><option value="RMB">RMB</option><option value="IDR">IDR</option></select></div>
       </div>
-      <label>Selling price (RMB)</label>
-      <input id="b_sell" type="number" placeholder="38000" />
+      <label>Selling price</label>
+      <div class="grid2"><input id="b_sell" type="number" placeholder="38000" /><select id="b_sell_cur"><option value="RMB">RMB</option><option value="IDR">IDR</option></select></div>
       <div id="b_brokerFields" class="hidden">
         <label>Fee rate (%)</label>
         <input id="b_feerate" type="number" placeholder="8" />
       </div>
-      <label>Freight (RMB)</label>
-      <input id="b_freight" type="number" placeholder="0" />
-      <label>Insurance (RMB)</label>
-      <input id="b_insurance" type="number" placeholder="0" />
-      <label>VAT (RMB)</label>
-      <input id="b_vat" type="number" placeholder="0" />
-      <label>Misc fees (RMB)</label>
-      <input id="b_misc" type="number" placeholder="0" />
+      <label>Freight</label>
+      <div class="grid2"><input id="b_freight" type="number" placeholder="0" /><select id="b_freight_cur"><option value="RMB">RMB</option><option value="IDR">IDR</option></select></div>
+      <label>Insurance</label>
+      <div class="grid2"><input id="b_insurance" type="number" placeholder="0" /><select id="b_insurance_cur"><option value="RMB">RMB</option><option value="IDR">IDR</option></select></div>
+      <label>VAT</label>
+      <div class="grid2"><input id="b_vat" type="number" placeholder="0" /><select id="b_vat_cur"><option value="RMB">RMB</option><option value="IDR">IDR</option></select></div>
+      <label>Misc fees</label>
+      <div class="grid2"><input id="b_misc" type="number" placeholder="0" /><select id="b_misc_cur"><option value="RMB">RMB</option><option value="IDR">IDR</option></select></div>
       <label>Payment method</label>
       <input id="b_payment" placeholder="e.g. Bank transfer" />
       <label>Status</label>
@@ -317,7 +345,7 @@
   <div class="sheet-overlay" id="crmSheet">
     <div class="sheet">
       <div class="close" onclick="NEXUS.closeSheet('crmSheet')">Close ✕</div>
-      <h2>New CRM Contact</h2>
+      <h2>New Contact</h2>
       <label>Type</label>
       <select id="c_kind">
         <option value="id_supplier">Indonesian Supplier</option>
@@ -325,15 +353,41 @@
         <option value="cn_supplier">Chinese Supplier</option>
         <option value="cn_buyer">Chinese Buyer</option>
       </select>
-      <label>Name</label>
-      <input id="c_name" placeholder="Company / person name" />
-      <label>Contact (WeChat / WhatsApp / phone / address)</label>
-      <input id="c_contact" placeholder="WA: 08123456789" />
-      <label>Tier / trust rating</label>
-      <input id="c_tier" placeholder="e.g. big fish, Alibaba Gold Supplier" />
-      <label>Certificates (Track B suppliers)</label>
-      <input id="c_certs" placeholder="Form E, phytosanitary" />
+      <label>Company name</label>
+      <input id="c_company" placeholder="e.g. CV Kopi Aceh" />
+      <label>Person name</label>
+      <input id="c_person" placeholder="e.g. Budi Santoso" />
+      <div class="grid2">
+        <div><label>WhatsApp</label><input id="c_whatsapp" placeholder="0812..." /></div>
+        <div><label>WeChat</label><input id="c_wechat" placeholder="wechat_id" /></div>
+      </div>
+      <div class="grid2">
+        <div><label>Phone</label><input id="c_phone" placeholder="021-..." /></div>
+        <div><label>Alibaba link</label><input id="c_alibaba" placeholder="https://..." /></div>
+      </div>
+      <label>Address</label>
+      <input id="c_address" placeholder="Full address" />
+      <label>Tier</label>
+      <select id="c_tier">
+        <option value="big_fish_client">Big Fish Client</option>
+        <option value="newbie_client">Newbie Client</option>
+        <option value="potential_client">Potential Client</option>
+        <option value="alibaba_trusted_supplier">Alibaba Trusted Supplier</option>
+        <option value="mature_supplier">Mature Supplier</option>
+        <option value="newbie_supplier">Newbie Supplier</option>
+      </select>
       <button onclick="submitCRM()">Save Contact</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="certSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('certSheet')">Close ✕</div>
+      <h2>Add Certificate</h2>
+      <input type="hidden" id="cert_clientId" />
+      <label>Certificate name</label>
+      <input id="cert_name" placeholder="e.g. Form E" />
+      <button onclick="submitCertificate()">Add</button>
     </div>
   </div>
 
@@ -389,21 +443,10 @@
   <div class="sheet-overlay" id="bcSheet">
     <div class="sheet">
       <div class="close" onclick="NEXUS.closeSheet('bcSheet')">Close ✕</div>
-      <h2>New Learning Log Entry</h2>
-      <label>Section</label>
-      <select id="bc_section">
-        <option value="cost">Startup cost estimation</option>
-        <option value="legal">Legal / technical requirement</option>
-        <option value="notes">Learning notes</option>
-        <option value="custom">Custom research</option>
-      </select>
-      <label>Title</label>
-      <input id="bc_title" placeholder="e.g. Entity registration research" />
-      <label>Content / notes</label>
-      <textarea id="bc_content" rows="4" placeholder="What did you learn / research..."></textarea>
-      <label>Progress % (this item)</label>
-      <input id="bc_progress" type="number" min="0" max="100" placeholder="30" />
-      <button onclick="submitBlockchain()">Save Entry</button>
+      <h2>Daily Blockchain Note</h2>
+      <label>What did you learn today?</label>
+      <textarea id="bc_content" rows="5" placeholder="Today I learned about..."></textarea>
+      <button onclick="submitBlockchain()">Save Note</button>
     </div>
   </div>
 

@@ -12,7 +12,7 @@ module.exports = function (io) {
   router.post("/", (req, res) => {
     const { section, title, content, progress_pct } = req.body;
     const info = db.prepare("INSERT INTO blockchain_log (section, title, content, progress_pct) VALUES (?,?,?,?)")
-      .run(section || "notes", title || "", content || "", Number(progress_pct) || 0);
+      .run(section || "notes", title || new Date().toISOString().slice(0, 10), content || "", Number(progress_pct) || 0);
     emit();
     res.json({ id: info.lastInsertRowid });
   });

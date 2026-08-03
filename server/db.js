@@ -250,6 +250,24 @@ try { db.exec("ALTER TABLE pet_logs ADD COLUMN food_grams REAL"); } catch (e) {}
 // Business Tracker dual-currency support on line items
 try { db.exec("ALTER TABLE order_items ADD COLUMN currency TEXT DEFAULT 'RMB'"); } catch (e) {}
 
+// CRM restructure: separate structured contact fields
+try { db.exec("ALTER TABLE clients ADD COLUMN company_name TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE clients ADD COLUMN person_name TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE clients ADD COLUMN whatsapp TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE clients ADD COLUMN wechat TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE clients ADD COLUMN phone TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE clients ADD COLUMN address TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE clients ADD COLUMN alibaba_link TEXT"); } catch (e) {}
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS client_certificates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id INTEGER,
+  cert_name TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+`);
+
 db.exec(`
 CREATE TABLE IF NOT EXISTS people (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -315,6 +333,31 @@ CREATE TABLE IF NOT EXISTS track_b_cost_items (
 
 // Track B: new 12-stage status pipeline, and profit-mode support
 try { db.exec("ALTER TABLE track_b_orders ADD COLUMN pipeline_status TEXT DEFAULT 'buyer_asking'"); } catch (e) {}
+
+// Track B: link to catalog product, per-field currency, own fx rate
+try { db.exec("ALTER TABLE track_b_orders ADD COLUMN catalog_product_id INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE track_b_orders ADD COLUMN fx_rate REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE track_b_orders ADD COLUMN cost_currency TEXT DEFAULT 'RMB'"); } catch (e) {}
+try { db.exec("ALTER TABLE track_b_orders ADD COLUMN selling_currency TEXT DEFAULT 'RMB'"); } catch (e) {}
+try { db.exec("ALTER TABLE track_b_orders ADD COLUMN freight_currency TEXT DEFAULT 'RMB'"); } catch (e) {}
+try { db.exec("ALTER TABLE track_b_orders ADD COLUMN insurance_currency TEXT DEFAULT 'RMB'"); } catch (e) {}
+try { db.exec("ALTER TABLE track_b_orders ADD COLUMN vat_currency TEXT DEFAULT 'RMB'"); } catch (e) {}
+try { db.exec("ALTER TABLE track_b_orders ADD COLUMN misc_currency TEXT DEFAULT 'RMB'"); } catch (e) {}
+
+// Nadylan A: category-adaptive product specs (different fields per category, stored as JSON)
+try { db.exec("ALTER TABLE order_items ADD COLUMN category TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE order_items ADD COLUMN spec_json TEXT"); } catch (e) {}
+
+// Health: poop/pee quick-tap event log, workout custom name, grocery grams
+db.exec(`
+CREATE TABLE IF NOT EXISTS bathroom_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  person_name TEXT,
+  kind TEXT,          -- 'pee' | 'poop'
+  logged_at TEXT DEFAULT (datetime('now'))
+);
+`);
+try { db.exec("ALTER TABLE health_logs ADD COLUMN grocery_grams REAL"); } catch (e) {}
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS pet_feeding_checklist (

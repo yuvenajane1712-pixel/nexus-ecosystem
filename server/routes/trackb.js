@@ -1,6 +1,11 @@
 const express = require("express");
 const db = require("../db");
 
+function getFxRate() {
+  const row = db.prepare("SELECT value FROM config WHERE key='fx_rate_idr_per_rmb'").get();
+  return row ? parseFloat(row.value) : 2180;
+}
+
 const CERTIFICATE_GUIDE = {
   "Coffee": { certs: ["Certificate of Origin (Form E)", "Phytosanitary Certificate", "Fumigation Certificate (if wood pallet used)"], costNote: "Form E ~150,000–300,000 IDR via Ministry of Trade; Phytosanitary ~200,000–500,000 IDR via Ministry of Agriculture (Karantina); Fumigation ~1–3 RMB/CBM via licensed fumigation vendor." },
   "Spices": { certs: ["Phytosanitary Certificate", "Certificate of Origin (Form E)", "Health Certificate"], costNote: "Similar to coffee; Health Certificate (Sertifikat Kesehatan) via BPOM/local health office, ~300,000–600,000 IDR." },
@@ -76,18 +81,13 @@ module.exports = function (io) {
 
   // 12-stage Track B pipeline (per spec)
   const TRACKB_PIPELINE = [
-    { key: "buyer_asking", label: "Buyer Asking" },
-    { key: "have_supplier", label: "Already Have Supplier" },
-    { key: "supplier_cert", label: "Supplier Providing Certificate" },
-    { key: "harvesting", label: "Harvesting" },
-    { key: "ready_product", label: "Ready Product" },
-    { key: "fully_packed", label: "Already All Packed" },
-    { key: "in_port", label: "Already In Port" },
-    { key: "shipping", label: "Already Shipping" },
-    { key: "arrived_china_port", label: "Already Arrive China Port" },
-    { key: "half_payment", label: "Already Half Payment" },
-    { key: "full_payment", label: "Already Full Payment" },
-    { key: "closing", label: "Finishing / Closing" },
+    { key: "confirmed_both", label: "Already Confirm Both Buyer & Supplier" },
+    { key: "partial_paid", label: "Already Pay (Parts)" },
+    { key: "packed", label: "Already Pack" },
+    { key: "id_port", label: "Already In Indonesia Port" },
+    { key: "cn_port", label: "Already In China Port" },
+    { key: "arrived_buyer", label: "Already Arrived To China Buyer" },
+    { key: "closing", label: "Closing" },
   ];
   router.get("/pipeline-stages", (req, res) => res.json(TRACKB_PIPELINE));
 
@@ -115,47 +115,70 @@ module.exports = function (io) {
     res.json(db.prepare("SELECT * FROM track_b_orders ORDER BY created_at DESC").all());
   });
 
+  function recomputeTrackB(orderId) {
+    const o = db.prepare("SELECT * FROM track_b_orders WHERE id=?").get(orderId);
+    if (!o) return null;
+    const fx = o.fx_rate || getFxRate();
+    const toRmb = (val, currency) => (currency === "IDR" ? val / fx : val);
+
+    const cost = toRmb(o.cost_price || 0, o.cost_currency);
+    const sell = toRmb(o.selling_price || 0, o.selling_currency);
+    const fr = toRmb(o.freight || 0, o.freight_currency);
+    const ins = toRmb(o.insurance || 0, o.insurance_currency);
+    const v = toRmb(o.vat || 0, o.vat_currency);
+    const misc = toRmb(o.misc_fees || 0, o.misc_currency);
+
+    const marginProfit = sell - cost - fr - ins - v - misc;
+    const feeProfit = sell * ((o.fee_rate || 0) / 100);
+    let profit = 0, marginPct = 0;
+    if (o.profit_model === "fee") profit = feeProfit;
+    else if (o.profit_model === "both") { profit = marginProfit + feeProfit; marginPct = sell > 0 ? (marginProfit / sell) * 100 : 0; }
+    else { profit = marginProfit; marginPct = sell > 0 ? (marginProfit / sell) * 100 : 0; }
+
+    db.prepare("UPDATE track_b_orders SET profit=?, margin_pct=? WHERE id=?").run(profit, marginPct, orderId);
+    return { profit, marginPct };
+  }
+
   router.post("/orders", (req, res) => {
     const {
-      buyer_name, product_summary, profit_model, fee_rate,
-      cost_price, selling_price, freight, insurance, vat, misc_fees, payment_method, status
+      buyer_name, catalog_product_id, profit_model, fee_rate,
+      cost_price, cost_currency, selling_price, selling_currency,
+      freight, freight_currency, insurance, insurance_currency,
+      vat, vat_currency, misc_fees, misc_currency, payment_method, status
     } = req.body;
 
-    const cost = Number(cost_price) || 0;
-    const sell = Number(selling_price) || 0;
-    const fr = Number(freight) || 0;
-    const ins = Number(insurance) || 0;
-    const v = Number(vat) || 0;
-    const misc = Number(misc_fees) || 0;
-
-    // profit_model: 'margin' | 'fee' | 'both'
-    const marginProfit = sell - cost;
-    const feeProfit = sell * ((Number(fee_rate) || 0) / 100);
-    let profit = 0, marginPct = 0;
-    if (profit_model === "fee") {
-      profit = feeProfit;
-    } else if (profit_model === "both") {
-      profit = marginProfit + feeProfit;
-      marginPct = sell > 0 ? (marginProfit / sell) * 100 : 0;
-    } else {
-      profit = marginProfit;
-      marginPct = sell > 0 ? (marginProfit / sell) * 100 : 0;
+    let product_summary = "";
+    if (catalog_product_id) {
+      const p = db.prepare("SELECT * FROM catalog_products WHERE id=?").get(catalog_product_id);
+      if (p) product_summary = `${p.name} (${p.category})`;
     }
 
     const info = db.prepare(`
-      INSERT INTO track_b_orders (buyer_name, product_summary, profit_model, fee_rate, cost_price, selling_price, freight, insurance, vat, misc_fees, profit, margin_pct, payment_method, status, pipeline_status)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'buyer_asking')
-    `).run(buyer_name, product_summary || "", profit_model, fee_rate || 0, cost, sell, fr, ins, v, misc, profit, marginPct, payment_method || "", status || "open");
+      INSERT INTO track_b_orders (
+        buyer_name, product_summary, catalog_product_id, profit_model, fee_rate,
+        cost_price, cost_currency, selling_price, selling_currency,
+        freight, freight_currency, insurance, insurance_currency,
+        vat, vat_currency, misc_fees, misc_currency,
+        payment_method, status, pipeline_status, fx_rate
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'confirmed_both',?)
+    `).run(
+      buyer_name, product_summary, catalog_product_id || null, profit_model, fee_rate || 0,
+      cost_price || 0, cost_currency || "RMB", selling_price || 0, selling_currency || "RMB",
+      freight || 0, freight_currency || "RMB", insurance || 0, insurance_currency || "RMB",
+      vat || 0, vat_currency || "RMB", misc_fees || 0, misc_currency || "RMB",
+      payment_method || "", status || "open", getFxRate()
+    );
 
+    const totals = recomputeTrackB(info.lastInsertRowid);
     emit();
 
     if ((status || "open") === "completed") {
       db.prepare("INSERT INTO transactions (kind, category, amount_rmb, source, note) VALUES (?,?,?,?,?)")
-        .run("income", "Nadylan Trade Profit", profit, "business", `Track B Order #${info.lastInsertRowid} (${buyer_name})`);
+        .run("income", "Nadylan Trade Profit", totals.profit, "business", `Track B Order #${info.lastInsertRowid} (${buyer_name})`);
       emitBudget();
     }
 
-    res.json({ id: info.lastInsertRowid, profit, margin_pct: marginPct });
+    res.json({ id: info.lastInsertRowid, profit: totals.profit, margin_pct: totals.marginPct });
   });
 
   router.put("/orders/:id/status", (req, res) => {
@@ -164,11 +187,12 @@ module.exports = function (io) {
     if (!order) return res.status(404).json({ error: "not found" });
     const wasClosing = order.pipeline_status === "closing";
     db.prepare("UPDATE track_b_orders SET pipeline_status=? WHERE id=?").run(pipeline_status, req.params.id);
+    const totals = recomputeTrackB(req.params.id);
 
     if (pipeline_status === "closing" && !wasClosing) {
       db.prepare("UPDATE track_b_orders SET status='completed' WHERE id=?").run(req.params.id);
       db.prepare("INSERT INTO transactions (kind, category, amount_rmb, source, note) VALUES (?,?,?,?,?)")
-        .run("income", "Nadylan Trade Profit", order.profit, "business", `Track B Order #${order.id} (${order.buyer_name})`);
+        .run("income", "Nadylan Trade Profit", totals.profit, "business", `Track B Order #${order.id} (${order.buyer_name})`);
       emitBudget();
     }
     emit();

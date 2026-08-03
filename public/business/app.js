@@ -136,11 +136,12 @@ function renderOrderCard(o) {
       </div>
 
       <div class="card" style="margin-top:10px;">
-        <div class="row"><span class="label">Product cost</span><span class="val">${NEXUS.fmtMoney(o.product_cost)}</span></div>
-        <div class="row"><span class="label">Logistics cost</span><span class="val">${NEXUS.fmtMoney(o.logistics_cost)}</span></div>
-        <div class="row"><span class="label">Service fee</span><span class="val">${NEXUS.fmtMoney(o.service_fee)}</span></div>
-        <div class="row"><span class="label"><strong>Total payment</strong></span><span class="val"><strong>${NEXUS.fmtMoney(o.total_payment)}</strong></span></div>
-        <div class="row"><span class="label">Net profit</span><span class="val" style="color:#1E8449;">${NEXUS.fmtMoney(o.net_profit)}</span></div>
+        <div class="row"><span class="label">Product cost</span><span class="val">${NEXUS.fmtMoney(o.product_cost)} <span class="meta">(${NEXUS.fmtMoney(o.product_cost*o.fx_rate,'IDR')})</span></span></div>
+        <div class="row"><span class="label">Logistics cost</span><span class="val">${NEXUS.fmtMoney(o.logistics_cost)} <span class="meta">(${NEXUS.fmtMoney(o.logistics_cost*o.fx_rate,'IDR')})</span></span></div>
+        <div class="row"><span class="label">Service fee</span><span class="val">${NEXUS.fmtMoney(o.service_fee)} <span class="meta">(${NEXUS.fmtMoney(o.service_fee*o.fx_rate,'IDR')})</span></span></div>
+        <div class="row"><span class="label"><strong>Total payment</strong></span><span class="val"><strong>${NEXUS.fmtMoney(o.total_payment)}</strong><br><span class="meta">${NEXUS.fmtMoney(o.total_payment*o.fx_rate,'IDR')}</span></span></div>
+        <div class="row"><span class="label">Net profit</span><span class="val" style="color:#1E8449;">${NEXUS.fmtMoney(o.net_profit)} <span class="meta">(${NEXUS.fmtMoney(o.net_profit*o.fx_rate,'IDR')})</span></span></div>
+        <div class="meta" style="margin-top:6px;">Locked rate: 1 RMB = ${o.fx_rate} IDR</div>
       </div>
 
       <label style="margin-top:10px;">Tracking code</label>
@@ -167,10 +168,19 @@ async function deleteOrder(orderId) {
 }
 async function deleteItem(orderId, itemId) { await NEXUS.del(`/api/business/orders/${orderId}/items/${itemId}`); loadOrders(); }
 
+function toggleCategoryFields() {
+  const cat = document.getElementById("i_category").value;
+  document.getElementById("i_techFields").classList.toggle("hidden", cat !== "tech");
+  document.getElementById("i_apparelFields").classList.toggle("hidden", cat !== "apparel");
+  document.getElementById("i_generalFields").classList.toggle("hidden", cat !== "general");
+}
+
 function openItemSheet(orderId) {
   document.getElementById("i_orderId").value = orderId;
-  ["i_name","i_spec","i_price","i_cbm"].forEach(id => document.getElementById(id).value = "");
+  ["i_name","i_price","i_cbm","i_tech_params","i_tech_model","i_tech_variant","i_apparel_size","i_apparel_color","i_apparel_material","i_general_grade","i_general_moq","i_general_volume"].forEach(id => document.getElementById(id).value = "");
   document.getElementById("i_qty").value = 1;
+  document.getElementById("i_category").value = "tech";
+  toggleCategoryFields();
   document.getElementById("i_photoPreview").style.display = "none";
   window.__itemPhotoData = null;
   NEXUS.openSheet("itemSheet");
@@ -192,14 +202,27 @@ function previewItemPhoto() {
 async function submitItem() {
   const orderId = document.getElementById("i_orderId").value;
   const name = document.getElementById("i_name").value.trim();
-  const spec = document.getElementById("i_spec").value.trim();
+  const category = document.getElementById("i_category").value;
   const unit_price = document.getElementById("i_price").value;
   const currency = document.getElementById("i_currency").value;
   const qty = document.getElementById("i_qty").value || 1;
   const cbm = document.getElementById("i_cbm").value || 0;
   if (!name) { alert("Product name is required."); return; }
 
-  await NEXUS.post(`/api/business/orders/${orderId}/items`, { name, spec, unit_price, currency, qty, cbm, photo_data: window.__itemPhotoData });
+  let spec_json = {}, specParts = [];
+  if (category === "tech") {
+    spec_json = { params: document.getElementById("i_tech_params").value, model: document.getElementById("i_tech_model").value, variant: document.getElementById("i_tech_variant").value };
+    specParts = [spec_json.model, spec_json.variant, spec_json.params].filter(Boolean);
+  } else if (category === "apparel") {
+    spec_json = { size: document.getElementById("i_apparel_size").value, color: document.getElementById("i_apparel_color").value, material: document.getElementById("i_apparel_material").value };
+    specParts = [spec_json.size, spec_json.color, spec_json.material].filter(Boolean);
+  } else {
+    spec_json = { grade: document.getElementById("i_general_grade").value, moq: document.getElementById("i_general_moq").value, volume: document.getElementById("i_general_volume").value };
+    specParts = [spec_json.grade, spec_json.moq && spec_json.moq+' MOQ', spec_json.volume].filter(Boolean);
+  }
+  const spec = specParts.join(", ");
+
+  await NEXUS.post(`/api/business/orders/${orderId}/items`, { name, spec, category, spec_json: JSON.stringify(spec_json), unit_price, currency, qty, cbm, photo_data: window.__itemPhotoData });
   NEXUS.closeSheet("itemSheet");
   loadOrders();
 }
@@ -374,41 +397,45 @@ async function seedCatalog() {
 }
 
 const TRACKB_PIPELINE = [
-  { key: "buyer_asking", label: "Buyer Asking" },
-  { key: "have_supplier", label: "Already Have Supplier" },
-  { key: "supplier_cert", label: "Supplier Providing Certificate" },
-  { key: "harvesting", label: "Harvesting" },
-  { key: "ready_product", label: "Ready Product" },
-  { key: "fully_packed", label: "Already All Packed" },
-  { key: "in_port", label: "Already In Port" },
-  { key: "shipping", label: "Already Shipping" },
-  { key: "arrived_china_port", label: "Already Arrive China Port" },
-  { key: "half_payment", label: "Already Half Payment" },
-  { key: "full_payment", label: "Already Full Payment" },
-  { key: "closing", label: "Finishing / Closing" },
+  { key: "confirmed_both", label: "Already Confirm Both Buyer & Supplier" },
+  { key: "partial_paid", label: "Already Pay (Parts)" },
+  { key: "packed", label: "Already Pack" },
+  { key: "id_port", label: "Already In Indonesia Port" },
+  { key: "cn_port", label: "Already In China Port" },
+  { key: "arrived_buyer", label: "Already Arrived To China Buyer" },
+  { key: "closing", label: "Closing" },
 ];
 function trackbPipelineIndex(key) { return Math.max(0, TRACKB_PIPELINE.findIndex(p => p.key === key)); }
 
+async function loadTrackBProductDropdown() {
+  const catalog = await NEXUS.get("/api/trackb/catalog");
+  const sel = document.getElementById("b_product");
+  if (!catalog.length) { sel.innerHTML = '<option value="">No catalog products — add one in the catalog section first</option>'; return; }
+  sel.innerHTML = catalog.map(p => `<option value="${p.id}">${p.name} (${p.category})</option>`).join("");
+}
+
 async function loadTrackBOrders() {
+  await loadTrackBProductDropdown();
   const orders = await NEXUS.get("/api/trackb/orders");
   document.getElementById("trackbOpen").textContent = orders.filter(o => o.status === 'open').length;
   const el = document.getElementById("trackbOrdersList");
   if (!orders.length) { el.innerHTML = '<div class="empty">No orders yet</div>'; return; }
   el.innerHTML = orders.map(o => {
-    const stIdx = trackbPipelineIndex(o.pipeline_status || "buyer_asking");
+    const stIdx = trackbPipelineIndex(o.pipeline_status || "confirmed_both");
     return `
     <div class="order-card">
       <div class="order-head">
         <div>
           <strong>${o.buyer_name}</strong> — ${o.product_summary || ""}
           <div class="meta">${NEXUS.fmtDate(o.created_at)} · ${o.profit_model} model</div>
+          <div class="meta">Cost ${o.cost_price} ${o.cost_currency} · Sell ${o.selling_price} ${o.selling_currency}</div>
         </div>
         <button class="small secondary" onclick="deleteTrackB(${o.id})">🗑</button>
       </div>
-      <select class="status-select st-${stIdx % 7}" onchange="updateTrackBStatus(${o.id}, this.value)">
+      <select class="status-select st-${stIdx}" onchange="updateTrackBStatus(${o.id}, this.value)">
         ${TRACKB_PIPELINE.map(p => `<option value="${p.key}" ${p.key === o.pipeline_status ? 'selected' : ''}>${p.label}</option>`).join("")}
       </select>
-      <div class="row" style="margin-top:8px;"><span class="label">Profit</span><span class="val">${NEXUS.fmtMoney(o.profit)} ${o.margin_pct ? '('+o.margin_pct.toFixed(1)+'%)' : ''}</span></div>
+      <div class="row" style="margin-top:8px;"><span class="label">Profit (RMB)</span><span class="val">${NEXUS.fmtMoney(o.profit)} ${o.margin_pct ? '('+o.margin_pct.toFixed(1)+'%)' : ''}</span></div>
       <a class="export-link" href="/api/export/trackb/orders/${o.id}/docx-zh" target="_blank">⬇ 中文订单确认书 (Chinese Word doc)</a>
     </div>
   `;
@@ -423,22 +450,33 @@ function toggleProfitModel() {
 
 async function submitTrackB() {
   const buyer_name = document.getElementById("b_buyer").value.trim();
-  const product_summary = document.getElementById("b_summary").value.trim();
+  const catalog_product_id = document.getElementById("b_product").value;
   const profit_model = document.getElementById("b_model").value;
   const cost_price = document.getElementById("b_cost").value;
+  const cost_currency = document.getElementById("b_cost_cur").value;
   const selling_price = document.getElementById("b_sell").value;
+  const selling_currency = document.getElementById("b_sell_cur").value;
   const fee_rate = document.getElementById("b_feerate").value;
   const freight = document.getElementById("b_freight").value;
+  const freight_currency = document.getElementById("b_freight_cur").value;
   const insurance = document.getElementById("b_insurance").value;
+  const insurance_currency = document.getElementById("b_insurance_cur").value;
   const vat = document.getElementById("b_vat").value;
+  const vat_currency = document.getElementById("b_vat_cur").value;
   const misc_fees = document.getElementById("b_misc").value;
+  const misc_currency = document.getElementById("b_misc_cur").value;
   const payment_method = document.getElementById("b_payment").value;
   const status = document.getElementById("b_status").value;
   if (!buyer_name || !selling_price) { alert("Buyer name and selling price are required."); return; }
 
-  await NEXUS.post("/api/trackb/orders", { buyer_name, product_summary, profit_model, fee_rate, cost_price, selling_price, freight, insurance, vat, misc_fees, payment_method, status });
+  await NEXUS.post("/api/trackb/orders", {
+    buyer_name, catalog_product_id, profit_model, fee_rate,
+    cost_price, cost_currency, selling_price, selling_currency,
+    freight, freight_currency, insurance, insurance_currency,
+    vat, vat_currency, misc_fees, misc_currency, payment_method, status,
+  });
   NEXUS.closeSheet("trackbSheet");
-  ["b_buyer","b_summary","b_cost","b_sell","b_feerate","b_freight","b_insurance","b_vat","b_misc","b_payment"].forEach(id => document.getElementById(id).value = "");
+  ["b_buyer","b_cost","b_sell","b_feerate","b_freight","b_insurance","b_vat","b_misc","b_payment"].forEach(id => document.getElementById(id).value = "");
   loadTrackBOrders();
 }
 
@@ -454,6 +492,10 @@ async function deleteTrackB(id) {
 // =========================================================
 let crmFilter = "";
 function filterCRM(kind) { crmFilter = kind; loadCRM(); }
+const TIER_LABELS = {
+  big_fish_client: "Big Fish Client", newbie_client: "Newbie Client", potential_client: "Potential Client",
+  alibaba_trusted_supplier: "Alibaba Trusted Supplier", mature_supplier: "Mature Supplier", newbie_supplier: "Newbie Supplier",
+};
 
 async function loadCRM() {
   const q = document.getElementById("crm_search").value;
@@ -464,31 +506,70 @@ async function loadCRM() {
   const el = document.getElementById("crmList");
   if (!list.length) { el.innerHTML = '<div class="empty">No contacts yet</div>'; return; }
   el.innerHTML = list.map(c => `
-    <div class="list-item">
-      <div>
-        <div><strong>${c.name}</strong> <span class="mini-tag">${c.kind}</span></div>
-        <div class="meta">${c.contact || ""}</div>
-        <div class="meta">${c.tier ? 'Tier/rating: ' + c.tier : ''} ${c.certificates ? '· Certs: ' + c.certificates : ''}</div>
+    <div class="card">
+      <div class="row"><span class="label"><strong>${c.company_name || c.name}</strong></span><span class="mini-tag">${c.kind}</span></div>
+      ${c.person_name ? `<div class="meta">Contact: ${c.person_name}</div>` : ''}
+      ${c.whatsapp ? `<div class="meta">WA: ${c.whatsapp}</div>` : ''}
+      ${c.wechat ? `<div class="meta">WeChat: ${c.wechat}</div>` : ''}
+      ${c.phone ? `<div class="meta">Phone: ${c.phone}</div>` : ''}
+      ${c.address ? `<div class="meta">${c.address}</div>` : ''}
+      ${c.alibaba_link ? `<div class="meta"><a href="${c.alibaba_link}" target="_blank">Alibaba link</a></div>` : ''}
+      ${c.tier ? `<div class="meta">Tier: ${TIER_LABELS[c.tier] || c.tier}</div>` : ''}
+      <div class="meta" style="margin-top:6px;">
+        Certificates: ${(c.certificates_list || []).map(cert => `<span class="mini-tag">${cert.cert_name} <a href="#" onclick="deleteCert(${cert.id});return false;">✕</a></span>`).join(" ") || 'none'}
       </div>
-      <button class="small secondary" onclick="deleteCRM(${c.id})">✕</button>
+      <div class="grid2" style="margin-top:8px;">
+        <button class="small secondary" onclick="openCertSheet(${c.id})">+ Add certificate</button>
+        <button class="small secondary" onclick="deleteCRM(${c.id})">🗑 Delete contact</button>
+      </div>
     </div>
   `).join("");
 }
 
 async function submitCRM() {
   const kind = document.getElementById("c_kind").value;
-  const name = document.getElementById("c_name").value.trim();
-  const contact = document.getElementById("c_contact").value.trim();
-  const tier = document.getElementById("c_tier").value.trim();
-  const certificates = document.getElementById("c_certs").value.trim();
-  if (!name) { alert("Name is required."); return; }
-  await NEXUS.post("/api/crm", { kind, name, contact, tier, certificates });
+  const company_name = document.getElementById("c_company").value.trim();
+  const person_name = document.getElementById("c_person").value.trim();
+  if (!company_name && !person_name) { alert("Enter a company or person name."); return; }
+  await NEXUS.post("/api/crm", {
+    kind, company_name, person_name,
+    whatsapp: document.getElementById("c_whatsapp").value,
+    wechat: document.getElementById("c_wechat").value,
+    phone: document.getElementById("c_phone").value,
+    address: document.getElementById("c_address").value,
+    alibaba_link: document.getElementById("c_alibaba").value,
+    tier: document.getElementById("c_tier").value,
+  });
   NEXUS.closeSheet("crmSheet");
-  ["c_name","c_contact","c_tier","c_certs"].forEach(id => document.getElementById(id).value = "");
+  ["c_company","c_person","c_whatsapp","c_wechat","c_phone","c_address","c_alibaba"].forEach(id => document.getElementById(id).value = "");
   loadCRM();
 }
 
-async function deleteCRM(id) { await NEXUS.del(`/api/crm/${id}`); loadCRM(); }
+function openCertSheet(clientId) {
+  document.getElementById("cert_clientId").value = clientId;
+  document.getElementById("cert_name").value = "";
+  NEXUS.openSheet("certSheet");
+}
+async function submitCertificate() {
+  const clientId = document.getElementById("cert_clientId").value;
+  const cert_name = document.getElementById("cert_name").value.trim();
+  if (!cert_name) { alert("Enter a certificate name."); return; }
+  await NEXUS.post(`/api/crm/${clientId}/certificates`, { cert_name });
+  NEXUS.closeSheet("certSheet");
+  loadCRM();
+}
+async function deleteCert(certId) {
+  const list = await NEXUS.get("/api/crm");
+  const owner = list.find(c => (c.certificates_list || []).some(cert => cert.id === certId));
+  if (owner) await NEXUS.del(`/api/crm/${owner.id}/certificates/${certId}`);
+  loadCRM();
+}
+
+async function deleteCRM(id) {
+  if (!confirm("Delete this contact?")) return;
+  await NEXUS.del(`/api/crm/${id}`);
+  loadCRM();
+}
 
 // =========================================================
 // ITINERARY GENERATOR
@@ -643,19 +724,14 @@ async function submitRecipe() {
 // BLOCKCHAIN LEARNING LOG
 // =========================================================
 async function loadBlockchain() {
-  const summary = await NEXUS.get("/api/blockchain/summary");
-  document.getElementById("bcProgress").textContent = (summary.overall_progress_pct || 0).toFixed(0) + "%";
-  document.getElementById("bcProgressBar").style.width = (summary.overall_progress_pct || 0) + "%";
-
   const entries = await NEXUS.get("/api/blockchain");
   const el = document.getElementById("bcList");
   if (!entries.length) { el.innerHTML = '<div class="empty">No entries yet</div>'; return; }
   el.innerHTML = entries.map(e => `
     <div class="list-item">
       <div>
-        <div><strong>${e.title}</strong> <span class="mini-tag">${e.section}</span></div>
+        <div><strong>${e.title}</strong></div>
         <div class="meta">${e.content || ''}</div>
-        <div class="meta">Progress: ${e.progress_pct}%</div>
       </div>
       <button class="small secondary" onclick="deleteBC(${e.id})">✕</button>
     </div>
@@ -663,14 +739,11 @@ async function loadBlockchain() {
 }
 
 async function submitBlockchain() {
-  const section = document.getElementById("bc_section").value;
-  const title = document.getElementById("bc_title").value.trim();
   const content = document.getElementById("bc_content").value.trim();
-  const progress_pct = document.getElementById("bc_progress").value || 0;
-  if (!title) { alert("Title is required."); return; }
-  await NEXUS.post("/api/blockchain", { section, title, content, progress_pct });
+  if (!content) { alert("Write something you learned today."); return; }
+  await NEXUS.post("/api/blockchain", { content });
   NEXUS.closeSheet("bcSheet");
-  ["bc_title","bc_content","bc_progress"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("bc_content").value = "";
   loadBlockchain();
 }
 

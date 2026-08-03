@@ -51,6 +51,15 @@
     </div>
 
     <div class="card">
+      <h3>🚻 Bathroom Log Today</h3>
+      <div class="grid2">
+        <button class="secondary" onclick="tapBathroom('pee')">💧 Pee (<span id="peeCount">0</span>)</button>
+        <button class="secondary" onclick="tapBathroom('poop')">💩 Poop (<span id="poopCount">0</span>)</button>
+      </div>
+      <div id="bathroomEvents" class="meta" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="card">
       <h3>🤖 AI Coaching</h3>
       <div id="insightBox" class="meta">Loading...</div>
     </div>
@@ -116,10 +125,14 @@
       <div class="close" onclick="NEXUS.closeSheet('workoutSheet')">Close ✕</div>
       <h2>Log a Workout</h2>
       <label>Activity type</label>
-      <select id="w_type">
+      <select id="w_type" onchange="toggleWorkoutOther()">
         <option>Gym — strength</option><option>Muay Thai</option><option>Swimming</option>
         <option>Morning walk</option><option>Home bodyweight</option><option>Other</option>
       </select>
+      <div id="w_otherField" class="hidden">
+        <label>Workout name</label>
+        <input id="w_othername" placeholder="e.g. Yoga class" />
+      </div>
       <label>Duration (min)</label>
       <input id="w_duration" type="number" placeholder="45" />
       <label>Calories burned (read from your watch)</label>
@@ -141,8 +154,6 @@
         <option value="bp">Blood Pressure</option>
         <option value="hr">Heart Rate (bpm)</option>
         <option value="spo2">Blood Oxygen (%)</option>
-        <option value="stool">Stool shape/volume</option>
-        <option value="urination">Urination frequency</option>
       </select>
       <div id="m_singleField">
         <label>Value</label>
@@ -176,10 +187,13 @@
     <div class="sheet">
       <div class="close" onclick="NEXUS.closeSheet('grocerySheet')">Close ✕</div>
       <h2>Log Grocery Purchase</h2>
-      <label>Item(s)</label>
-      <input id="g_title" placeholder="e.g. weekly veggies" />
+      <label>Item</label>
+      <input id="g_title" placeholder="e.g. chicken breast" oninput="previewShelfLife()" />
+      <label>Amount (grams)</label>
+      <input id="g_grams" type="number" placeholder="500" />
       <label>Cost (RMB) — auto-posts to Budget</label>
       <input id="g_cost" type="number" placeholder="85" />
+      <div id="shelfLifePreview" class="card" style="background:#EAF1F1;"></div>
       <button onclick="submitGrocery()">Save</button>
     </div>
   </div>

@@ -12,6 +12,35 @@ function toggleMetricFields() {
   document.getElementById("m_bpFields").classList.toggle("hidden", type !== "bp");
 }
 
+function toggleWorkoutOther() {
+  document.getElementById("w_otherField").classList.toggle("hidden", document.getElementById("w_type").value !== "Other");
+}
+
+async function tapBathroom(kind) {
+  await NEXUS.post("/api/health/bathroom", { person_name: currentPersonName, kind });
+  loadBathroom();
+}
+
+async function loadBathroom() {
+  const data = await NEXUS.get(`/api/health/bathroom/${encodeURIComponent(currentPersonName)}`);
+  document.getElementById("peeCount").textContent = data.pee_count;
+  document.getElementById("poopCount").textContent = data.poop_count;
+  document.getElementById("bathroomEvents").innerHTML = data.events.map(e =>
+    `${e.kind === 'pee' ? '💧' : '💩'} ${NEXUS.fmtDate(e.logged_at)}`
+  ).join(" · ") || "No events logged yet today";
+}
+
+async function previewShelfLife() {
+  const item = document.getElementById("g_title").value.trim();
+  const box = document.getElementById("shelfLifePreview");
+  if (!item) { box.innerHTML = ""; return; }
+  const sl = await NEXUS.get(`/api/health/shelf-life?item=${encodeURIComponent(item)}`);
+  box.innerHTML = `
+    <div class="row"><span class="label">${sl.fridge ? '🧊 Fridge' : '🌡️ Room temp OK'}</span><span class="val">~${sl.estimated_days} days</span></div>
+    <div class="meta">${sl.note}</div>
+  `;
+}
+
 async function loadPeopleDropdown() {
   const people = await NEXUS.get("/api/people");
   const sel = document.getElementById("personSelect");
@@ -69,6 +98,7 @@ async function refreshAll() {
   await loadInsight();
   await loadWeightChart();
   await loadLogs();
+  await loadBathroom();
 }
 
 function openUpdatePerson() {
@@ -220,13 +250,14 @@ async function submitMeal() {
 
 async function submitWorkout() {
   const type = document.getElementById("w_type").value;
+  const workoutName = type === "Other" ? (document.getElementById("w_othername").value.trim() || "Other") : type;
   const duration = document.getElementById("w_duration").value;
   const burned = document.getElementById("w_burned").value;
   const steps = document.getElementById("w_steps").value;
   await NEXUS.post("/api/health/logs", { user_name: currentPersonName, log_type: "workout", title: "calories_burned", value: String(burned || 0) });
-  await NEXUS.post("/api/health/logs", { user_name: currentPersonName, log_type: "workout", title: type, value: `${duration} min${steps ? ', ' + steps + ' steps' : ''}` });
+  await NEXUS.post("/api/health/logs", { user_name: currentPersonName, log_type: "workout", title: workoutName, value: `${duration} min${steps ? ', ' + steps + ' steps' : ''}` });
   NEXUS.closeSheet("workoutSheet");
-  ["w_duration","w_burned","w_steps"].forEach(id => document.getElementById(id).value = "");
+  ["w_duration","w_burned","w_steps","w_othername"].forEach(id => document.getElementById(id).value = "");
   refreshAll();
 }
 
@@ -242,7 +273,7 @@ async function submitMetric() {
   } else {
     value = document.getElementById("m_value").value;
     if (!value) { alert("Enter a value."); return; }
-    title = { weight: "weight", hr: "heart_rate", spo2: "blood_oxygen", stool: "stool", urination: "urination" }[type];
+    title = { weight: "weight", hr: "heart_rate", spo2: "blood_oxygen" }[type];
   }
   await NEXUS.post("/api/health/logs", { user_name: currentPersonName, log_type: "metric", title, value });
   NEXUS.closeSheet("metricSheet");
@@ -261,11 +292,16 @@ async function submitSupplement() {
 
 async function submitGrocery() {
   const title = document.getElementById("g_title").value.trim();
+  const grocery_grams = document.getElementById("g_grams").value;
   const cost_rmb = document.getElementById("g_cost").value;
   if (!title || !cost_rmb) { alert("Item and cost are required."); return; }
-  await NEXUS.post("/api/health/logs", { user_name: currentPersonName, log_type: "grocery", title, cost_rmb });
+  const res = await NEXUS.post("/api/health/logs", { user_name: currentPersonName, log_type: "grocery", title, cost_rmb, grocery_grams });
   NEXUS.closeSheet("grocerySheet");
-  ["g_title","g_cost"].forEach(id => document.getElementById(id).value = "");
+  ["g_title","g_grams","g_cost"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("shelfLifePreview").innerHTML = "";
+  if (res.shelf_life) {
+    alert(`Shelf life estimate: ~${res.shelf_life.estimated_days} days, ${res.shelf_life.fridge ? 'keep refrigerated' : 'room temp OK'}.\n${res.shelf_life.note}`);
+  }
   refreshAll();
 }
 

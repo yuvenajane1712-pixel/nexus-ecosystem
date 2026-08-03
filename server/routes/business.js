@@ -139,12 +139,12 @@ module.exports = function (io) {
 
   // ---- line items ----
   router.post("/orders/:id/items", (req, res) => {
-    const { name, spec, unit_price, qty, cbm, photo_data, currency } = req.body;
+    const { name, spec, unit_price, qty, cbm, photo_data, currency, category, spec_json } = req.body;
     if (!name) return res.status(400).json({ error: "name required" });
     const info = db.prepare(`
-      INSERT INTO order_items (order_id, name, spec, unit_price, qty, cbm, photo_data, currency)
-      VALUES (?,?,?,?,?,?,?,?)
-    `).run(req.params.id, name, spec || "", Number(unit_price) || 0, Number(qty) || 1, Number(cbm) || 0, photo_data || null, currency === "IDR" ? "IDR" : "RMB");
+      INSERT INTO order_items (order_id, name, spec, unit_price, qty, cbm, photo_data, currency, category, spec_json)
+      VALUES (?,?,?,?,?,?,?,?,?,?)
+    `).run(req.params.id, name, spec || "", Number(unit_price) || 0, Number(qty) || 1, Number(cbm) || 0, photo_data || null, currency === "IDR" ? "IDR" : "RMB", category || "", spec_json || "{}");
     const totals = recomputeOrder(req.params.id);
     emit();
     res.json({ id: info.lastInsertRowid, ...totals });

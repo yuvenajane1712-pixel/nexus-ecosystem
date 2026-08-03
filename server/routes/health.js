@@ -40,22 +40,24 @@ module.exports = function (io) {
   });
 
   router.post("/logs", (req, res) => {
-    const { user_name, log_type, title, value, calories, protein, fat, carbs, cost_rmb } = req.body;
+    const { user_name, log_type, title, value, calories, protein, fat, carbs, cost_rmb, grocery_grams } = req.body;
     const info = db.prepare(`
-      INSERT INTO health_logs (user_name, log_type, title, value, calories, protein, fat, carbs, cost_rmb)
-      VALUES (?,?,?,?,?,?,?,?,?)
-    `).run(user_name, log_type, title || "", value || "", calories || null, protein || null, fat || null, carbs || null, cost_rmb || null);
+      INSERT INTO health_logs (user_name, log_type, title, value, calories, protein, fat, carbs, cost_rmb, grocery_grams)
+      VALUES (?,?,?,?,?,?,?,?,?,?)
+    `).run(user_name, log_type, title || "", value || "", calories || null, protein || null, fat || null, carbs || null, cost_rmb || null, grocery_grams || null);
 
     emit();
 
-    // grocery logs auto-post to Budget as an expense (no duplicate entry)
+    let shelfLife = null;
+    // grocery logs auto-post to Budget as an expense (no duplicate entry) + get a shelf-life estimate
     if (log_type === "grocery" && cost_rmb) {
       db.prepare("INSERT INTO transactions (kind, category, amount_rmb, source, note) VALUES (?,?,?,?,?)")
         .run("expense", "Human Groceries", Number(cost_rmb), "health", `${user_name}: ${title}`);
       emitBudget();
+      shelfLife = estimateShelfLife(title || "");
     }
 
-    res.json({ id: info.lastInsertRowid });
+    res.json({ id: info.lastInsertRowid, shelf_life: shelfLife });
   });
 
   router.delete("/logs/:id", (req, res) => {
@@ -182,6 +184,53 @@ module.exports = function (io) {
       fat: acc.fat + (r.fat || 0), carbs: acc.carbs + (r.carbs || 0), fiber: acc.fiber + (r.fiber || 0),
     }), { calories: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 });
     res.json({ bySlot, totals });
+  });
+
+  // ---- bathroom quick-tap log (pee/poop) ----
+  router.post("/bathroom", (req, res) => {
+    const { person_name, kind } = req.body;
+    const info = db.prepare("INSERT INTO bathroom_log (person_name, kind) VALUES (?,?)").run(person_name, kind);
+    emit();
+    res.json({ id: info.lastInsertRowid });
+  });
+
+  router.get("/bathroom/:person", (req, res) => {
+    const rows = db.prepare(`
+      SELECT * FROM bathroom_log WHERE person_name=? AND date(logged_at)=date('now') ORDER BY logged_at ASC
+    `).all(req.params.person);
+    res.json({
+      pee_count: rows.filter((r) => r.kind === "pee").length,
+      poop_count: rows.filter((r) => r.kind === "poop").length,
+      events: rows,
+    });
+  });
+
+  router.delete("/bathroom/:id", (req, res) => {
+    db.prepare("DELETE FROM bathroom_log WHERE id=?").run(req.params.id);
+    emit();
+    res.json({ ok: true });
+  });
+
+  // rule-based shelf-life estimate for grocery purchases (small curated reference table)
+  const SHELF_LIFE_GUIDE = [
+    { match: /chicken|pork|beef|meat|fish|shrimp/i, fridge: true, days: 2, note: "Raw meat/fish — use within 1-2 days refrigerated, or freeze for longer storage." },
+    { match: /egg/i, fridge: true, days: 21, note: "Eggs keep well refrigerated for 3+ weeks." },
+    { match: /leafy|spinach|lettuce|veg/i, fridge: true, days: 5, note: "Leafy greens wilt fast — refrigerate, use within 3-5 days." },
+    { match: /potato|onion|garlic/i, fridge: false, days: 21, note: "Root vegetables store best in a cool, dark, dry place outside the fridge." },
+    { match: /rice|oat|grain/i, fridge: false, days: 180, note: "Dry grains store long-term in an airtight container at room temperature." },
+    { match: /fruit|apple|banana|mango/i, fridge: false, days: 5, note: "Most fruit is fine at room temp for a few days; refrigerate to extend a bit longer." },
+    { match: /milk|dairy|cheese|yogurt/i, fridge: true, days: 7, note: "Dairy — keep refrigerated, use within about a week of opening." },
+    { match: /tofu/i, fridge: true, days: 5, note: "Tofu — refrigerate in water, change water daily, use within 5 days." },
+  ];
+  function estimateShelfLife(itemName) {
+    const match = SHELF_LIFE_GUIDE.find((g) => g.match.test(itemName));
+    if (match) return { fridge: match.fridge, estimated_days: match.days, note: match.note };
+    return { fridge: true, estimated_days: 4, note: "No specific match found — defaulting to a conservative refrigerated estimate; adjust based on the actual item." };
+  }
+  router.get("/shelf-life", (req, res) => {
+    const { item } = req.query;
+    if (!item) return res.status(400).json({ error: "item required" });
+    res.json(estimateShelfLife(item));
   });
 
   return router;
