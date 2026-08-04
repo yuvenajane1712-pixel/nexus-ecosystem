@@ -388,6 +388,14 @@ try { db.exec("ALTER TABLE tours ADD COLUMN pax_children INTEGER DEFAULT 0"); } 
 try { db.exec("ALTER TABLE tours ADD COLUMN pax_infants INTEGER DEFAULT 0"); } catch (e) {}
 try { db.exec("ALTER TABLE tours ADD COLUMN pax_elderly INTEGER DEFAULT 0"); } catch (e) {}
 try { db.exec("ALTER TABLE tours ADD COLUMN amount_client_pays REAL DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN tour_category TEXT DEFAULT 'bigbus'"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN date_from TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN date_to TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN days INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN destinations TEXT"); } catch (e) {}
+
+// Health: per-person excluded foods (X out proteins/carbs they don't eat)
+try { db.exec("ALTER TABLE people ADD COLUMN excluded_foods TEXT DEFAULT '[]'"); } catch (e) {}
 
 // People: weight goal + target date, water target
 try { db.exec("ALTER TABLE people ADD COLUMN goal_weight_kg REAL"); } catch (e) {}

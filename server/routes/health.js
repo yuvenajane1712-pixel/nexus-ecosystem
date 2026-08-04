@@ -39,6 +39,29 @@ module.exports = function (io) {
     res.json({ id: info.lastInsertRowid, calories, protein, fat, carbs, fiber });
   });
 
+  // batch-log a whole meal slot at once: Meal A / Meal B / Meal C, each with its own
+  // name/grams/kcal/cooking method — free-form, not limited to the preset food database
+  router.post("/logs/meal-batch", (req, res) => {
+    const { user_name, meal_slot, items } = req.body;
+    if (!Array.isArray(items) || !items.length) return res.status(400).json({ error: "items array required" });
+
+    const stmt = db.prepare(`
+      INSERT INTO health_logs (user_name, log_type, title, value, calories, protein, fat, carbs, fiber, meal_slot, grams)
+      VALUES (?, 'diet', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertedIds = [];
+    items.forEach((item) => {
+      const info = stmt.run(
+        user_name, item.name || "Meal item", item.cooking_method || "",
+        Number(item.calories) || 0, Number(item.protein) || null, Number(item.fat) || null, Number(item.carbs) || null, Number(item.fiber) || null,
+        meal_slot || "", Number(item.grams) || null
+      );
+      insertedIds.push(info.lastInsertRowid);
+    });
+    emit();
+    res.json({ ids: insertedIds, count: insertedIds.length });
+  });
+
   router.post("/logs", (req, res) => {
     const { user_name, log_type, title, value, calories, protein, fat, carbs, cost_rmb, grocery_grams } = req.body;
     const info = db.prepare(`

@@ -108,13 +108,32 @@
     <div class="sheet">
       <div class="close" onclick="NEXUS.closeSheet('actionSheet')">Close ✕</div>
       <h2>What do you want to log?</h2>
-      <button class="action-option" onclick="openForm('mealSheet')">🍽 Meal (breakfast/lunch/dinner/snack)</button>
+      <button class="action-option" onclick="openMealBatch()">🍽 Meal (Meal A / B / C for one slot)</button>
+      <button class="action-option" onclick="openForm('mealSheet')">🍽 Quick single item (from food database)</button>
       <button class="action-option" onclick="openForm('workoutSheet')">🏃 Workout</button>
       <button class="action-option" onclick="openForm('metricSheet')">📊 Metric (weight, BP, HR, SpO2)</button>
       <button class="action-option" onclick="NEXUS.closeSheet('actionSheet');NEXUS.openSheet('waterSheet')">💧 Water</button>
       <button class="action-option" onclick="openForm('supplementSheet')">🌿 TCM (one-off log)</button>
       <button class="action-option" onclick="openForm('grocerySheet')">🛒 Grocery purchase</button>
       <button class="action-option" onclick="openForm('personSheet')">👤 Add a person</button>
+    </div>
+  </div>
+
+  <!-- Batch meal form: log Meal A/B/C for one slot in a single submission, custom name/grams/kcal -->
+  <div class="sheet-overlay" id="mealBatchSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('mealBatchSheet')">Close ✕</div>
+      <h2>Log a Meal Slot</h2>
+      <label>Meal slot</label>
+      <select id="mb_slot">
+        <option value="breakfast">Breakfast</option>
+        <option value="lunch">Lunch</option>
+        <option value="dinner">Dinner</option>
+        <option value="snack">Snack</option>
+      </select>
+      <div id="mb_rows"></div>
+      <button class="secondary" type="button" onclick="addMealBatchRow()">+ Add another item (Meal A/B/C...)</button>
+      <button style="margin-top:10px;" onclick="submitMealBatch()">Save Whole Meal</button>
     </div>
   </div>
 
@@ -247,6 +266,12 @@
       <label><input type="checkbox" id="p_glutenfree" style="width:auto;display:inline;" /> Gluten-free</label>
       <label><input type="checkbox" id="p_dairyfree" style="width:auto;display:inline;" /> Dairy-free</label>
       <label><input type="checkbox" id="p_soyfree" style="width:auto;display:inline;" /> Soy-free</label>
+      <div class="grid2">
+        <div><label>Goal weight (kg)</label><input id="p_goal" type="number" placeholder="65" /></div>
+        <div><label>Goal date</label><input id="p_goal_date" type="date" /></div>
+      </div>
+      <label>Foods this person doesn't eat (uncheck to exclude)</label>
+      <div id="p_foodExclusions"></div>
       <button onclick="submitPerson()">Add Person</button>
     </div>
   </div>
@@ -266,6 +291,8 @@
       <input id="up_goal" type="number" />
       <label>Goal date (target)</label>
       <input id="up_goal_date" type="date" />
+      <label>Foods this person doesn't eat (uncheck to exclude)</label>
+      <div id="up_foodExclusions"></div>
       <button onclick="submitPersonUpdate()">Save</button>
     </div>
   </div>

@@ -26,7 +26,6 @@ app.use("/api/trackb", require("./routes/trackb")(io));
 app.use("/api/indocha", require("./routes/indocha")(io));
 app.use("/api/blockchain", require("./routes/blockchain")(io));
 app.use("/api/social", require("./routes/social")(io));
-app.use("/api/itinerary", require("./routes/itinerary")(io));
 app.use("/api/export", require("./routes/export")());
 app.use("/api/people", require("./routes/people")(io));
 app.use("/api/supplements", require("./routes/supplements")(io));

@@ -134,16 +134,6 @@
       </div>
       <div class="section-title">Guangzhou Mate Tours</div>
       <div id="toursList"><div class="empty">No tours yet</div></div>
-      <div class="section-title">AI Itinerary Generator</div>
-      <div class="card">
-        <label>Destinations (comma separated)</label>
-        <input id="it_destinations" placeholder="Canton Tower, Shamian Island, Chimelong" />
-        <label>Days</label>
-        <input id="it_days" type="number" placeholder="2" />
-        <label><input type="checkbox" id="it_rideshare" checked style="width:auto;display:inline;" /> Include 打车 (rideshare) between stops</label>
-        <button onclick="generateItinerary()">Generate Itinerary</button>
-        <div id="itineraryResult"></div>
-      </div>
     </section>
 
     <!-- ===== TAB: Social ===== -->
@@ -156,7 +146,25 @@
         </select>
         <label>Topic / keyword</label>
         <input id="s_topic" placeholder="e.g. weight loss journey update" />
-        <button onclick="generateScript()">Generate Script (AI-style)</button>
+        <label>Duration (seconds)</label>
+        <input id="s_duration" type="number" placeholder="30" value="30" />
+        <label>Post where (platform)</label>
+        <select id="s_platform">
+          <option value="TikTok">TikTok</option>
+          <option value="Instagram">Instagram</option>
+          <option value="Douyin">Douyin</option>
+          <option value="Xiaohongshu">Xiaohongshu</option>
+          <option value="YouTube">YouTube</option>
+        </select>
+        <label>Script language</label>
+        <select id="s_language">
+          <option value="en">English</option>
+          <option value="zh">Chinese (中文)</option>
+          <option value="id">Indonesian</option>
+        </select>
+        <label>Equipment (select all that apply)</label>
+        <div id="equipmentCheckboxes"></div>
+        <button onclick="generateScript()" style="margin-top:10px;">Generate Script</button>
         <div id="scriptResult"></div>
       </div>
       <div class="section-title">6-Month Content Calendar</div>
@@ -305,9 +313,26 @@
       <h2>New Tour</h2>
       <label>Client name</label>
       <input id="t_client" placeholder="e.g. Mr. Wang" />
-      <label>Travel date</label>
-      <input id="t_date" type="date" />
+      <label>Service type</label>
+      <select id="t_category" onchange="toggleTourCategory()">
+        <option value="only_booking">Only Booking (5% fee)</option>
+        <option value="custom_itinerary">Custom Itinerary (89K IDR/day)</option>
+        <option value="bigbus">Big Bus Tour Group</option>
+        <option value="private">Private Tour</option>
+      </select>
+
       <div class="grid2">
+        <div><label>Travel date from</label><input id="t_datefrom" type="date" /></div>
+        <div><label>Travel date until</label><input id="t_dateto" type="date" /></div>
+      </div>
+      <label>How many days</label>
+      <input id="t_days" type="number" placeholder="5" />
+
+      <label>Where they want to go (list)</label>
+      <div id="destList"></div>
+      <button class="small secondary" type="button" onclick="addDestinationRow()">+ Add destination</button>
+
+      <div class="grid2" style="margin-top:10px;">
         <div><label>Adults</label><input id="t_adults" type="number" value="0" /></div>
         <div><label>Children</label><input id="t_children" type="number" value="0" /></div>
       </div>
@@ -315,26 +340,28 @@
         <div><label>Infants</label><input id="t_infants" type="number" value="0" /></div>
         <div><label>Elderly</label><input id="t_elderly" type="number" value="0" /></div>
       </div>
-      <label>Type</label>
-      <select id="t_type">
-        <option value="bigbus">Big Bus Group Tour</option>
-        <option value="private">Private Tour</option>
-      </select>
-      <label>Tier</label>
-      <select id="t_tier">
-        <option value="Backpackers Tour|13000000">Backpackers Tour — 13M IDR/pax</option>
-        <option value="High School Graduate Tour|17000000">High School Graduate — 17M IDR/pax</option>
-        <option value="Corporate Business Tour|20000000">Corporate Business — 20M IDR/pax</option>
-        <option value="High Season Tour|25000000">High Season — 25M IDR/pax</option>
-        <option value="Leisure Private Tour|800000">Leisure Private — 800K IDR/day</option>
-        <option value="Business Concierge Private Tour|1500000">Business Concierge — 1.5M IDR/day</option>
-      </select>
-      <label id="t_qtyLabel">Pax count</label>
-      <input id="t_qty" type="number" placeholder="30" />
-      <label>Amount client pays (IDR) — overrides tier calc if filled</label>
-      <input id="t_clientpays" type="number" placeholder="e.g. 15000000" />
-      <label>Total cost (IDR)</label>
-      <input id="t_cost" type="number" placeholder="200000000" />
+
+      <div id="t_tierFields">
+        <label>Tier</label>
+        <select id="t_tier">
+          <option value="Backpackers Tour|13000000">Backpackers Tour — 13M IDR/pax</option>
+          <option value="High School Graduate Tour|17000000">High School Graduate — 17M IDR/pax</option>
+          <option value="Corporate Business Tour|20000000">Corporate Business — 20M IDR/pax</option>
+          <option value="High Season Tour|25000000">High Season — 25M IDR/pax</option>
+          <option value="Leisure Private Tour|800000">Leisure Private — 800K IDR/day</option>
+          <option value="Business Concierge Private Tour|1500000">Business Concierge — 1.5M IDR/day</option>
+        </select>
+        <label id="t_qtyLabel">Pax count</label>
+        <input id="t_qty" type="number" placeholder="30" />
+      </div>
+
+      <div id="t_bookingFields" class="hidden">
+        <label>Amount client wants booked (IDR)</label>
+        <input id="t_clientpays" type="number" placeholder="e.g. 5000000" />
+      </div>
+
+      <label>Total cost to us (IDR)</label>
+      <input id="t_cost" type="number" placeholder="0" />
       <label>Status</label>
       <select id="t_status">
         <option value="open">Open</option>

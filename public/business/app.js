@@ -12,7 +12,7 @@ function loadTabData(tab) {
   if (tab === "trackb") { loadCatalog(); loadTrackBOrders(); }
   if (tab === "crm") loadCRM();
   if (tab === "tours") loadTours();
-  if (tab === "social") loadCalendar();
+  if (tab === "social") { loadCalendar(); loadEquipmentCheckboxes(); }
   if (tab === "indocha") { loadPrices(); loadRecipes(); }
   if (tab === "blockchain") loadBlockchain();
 }
@@ -43,6 +43,7 @@ document.getElementById("fabBtn").addEventListener("click", () => {
   }
   if (activeTab === "social") { alert("Use the Generate Script form above, or Auto-fill calendar."); return; }
   const target = sheetMap[activeTab];
+  if (target === "tourSheet") { resetDestinations(); toggleTourCategory(); }
   if (target) NEXUS.openSheet(target);
 });
 
@@ -319,21 +320,25 @@ async function loadTours() {
   const open = tours.filter(t => t.status === "open").length;
   document.getElementById("openTours").textContent = open;
 
+  const CATEGORY_LABELS = { only_booking: "Only Booking (5%)", custom_itinerary: "Custom Itinerary", bigbus: "Big Bus Tour Group", private: "Private Tour" };
   if (!tours.length) { el.innerHTML = '<div class="empty">No tours yet</div>'; }
   else {
     el.innerHTML = tours.map(t => `
-      <div class="list-item">
-        <div>
-          <div><strong>${t.tier_name}</strong> ${t.client_name ? '— ' + t.client_name : ''}</div>
-          <div class="meta">${t.travel_date || ''} ${t.pax_adults||t.pax_children||t.pax_infants||t.pax_elderly ? `· ${t.pax_adults||0} adult, ${t.pax_children||0} child, ${t.pax_infants||0} infant, ${t.pax_elderly||0} elderly` : ''}</div>
-          <div class="meta">${NEXUS.fmtDate(t.created_at)} · rev ${NEXUS.fmtMoney(t.revenue,'IDR')} · booking fee ${NEXUS.fmtMoney(t.booking_fee,'IDR')}</div>
-          <a class="export-link" href="/api/export/tour/${t.id}/pdf" target="_blank">⬇ Export Invoice PDF</a>
-        </div>
-        <div style="text-align:right;">
+      <div class="order-card">
+        <div class="order-head">
+          <div>
+            <strong>${CATEGORY_LABELS[t.tour_category] || t.tier_name}</strong> ${t.client_name ? '— ' + t.client_name : ''}
+            <div class="meta">${t.date_from ? t.date_from + ' → ' + (t.date_to || '') : ''} ${t.days ? '· ' + t.days + ' days' : ''}</div>
+            <div class="meta">${t.pax_adults||t.pax_children||t.pax_infants||t.pax_elderly ? `${t.pax_adults||0} adult, ${t.pax_children||0} child, ${t.pax_infants||0} infant, ${t.pax_elderly||0} elderly` : ''}</div>
+          </div>
           <div class="tag ${t.status === 'completed' ? 'income' : 'expense'}">${t.status}</div>
-          <div class="meta" style="margin-top:6px;">margin ${NEXUS.fmtMoney(t.margin,'IDR')}</div>
-          ${t.status === 'open' ? `<button class="small secondary" style="margin-top:6px;" onclick="completeTour(${t.id})">Complete</button>` : ""}
         </div>
+        ${t.destinations ? `<div class="meta" style="white-space:pre-line; margin:6px 0;">📍 ${t.destinations}</div>` : ''}
+        <div class="row"><span class="label">Revenue</span><span class="val">${NEXUS.fmtMoney(t.revenue,'IDR')}</span></div>
+        <div class="row"><span class="label">Booking fee (5%)</span><span class="val">${NEXUS.fmtMoney(t.booking_fee,'IDR')}</span></div>
+        <div class="row"><span class="label"><strong>Net margin</strong></span><span class="val"><strong>${NEXUS.fmtMoney(t.margin,'IDR')}</strong></span></div>
+        <a class="export-link" href="/api/export/tour/${t.id}/pdf" target="_blank">⬇ Export Invoice PDF</a>
+        ${t.status === 'open' ? `<button class="small secondary" style="margin-top:8px;" onclick="completeTour(${t.id})">Mark Completed</button>` : ""}
       </div>
     `).join("");
   }
@@ -360,27 +365,61 @@ async function submitOrder() {
   loadOrders();
 }
 
+function toggleTourCategory() {
+  const cat = document.getElementById("t_category").value;
+  document.getElementById("t_tierFields").classList.toggle("hidden", cat === "only_booking" || cat === "custom_itinerary");
+  document.getElementById("t_bookingFields").classList.toggle("hidden", cat !== "only_booking");
+}
+
+let destRowCount = 0;
+function addDestinationRow() {
+  destRowCount++;
+  const el = document.getElementById("destList");
+  const row = document.createElement("div");
+  row.className = "grid2";
+  row.innerHTML = `<input type="text" class="dest-input" placeholder="Destination ${destRowCount}" /><button type="button" class="small secondary" onclick="this.parentElement.remove()">✕</button>`;
+  el.appendChild(row);
+}
+function resetDestinations() {
+  document.getElementById("destList").innerHTML = "";
+  destRowCount = 0;
+  addDestinationRow();
+}
+
 async function submitTour() {
-  const tour_type = document.getElementById("t_type").value;
-  const [tier_name, price_per_unit] = document.getElementById("t_tier").value.split("|");
-  const pax_or_days = document.getElementById("t_qty").value;
-  const cost = document.getElementById("t_cost").value;
-  const status = document.getElementById("t_status").value;
+  const tour_category = document.getElementById("t_category").value;
   const client_name = document.getElementById("t_client").value.trim();
-  const travel_date = document.getElementById("t_date").value;
+  const date_from = document.getElementById("t_datefrom").value;
+  const date_to = document.getElementById("t_dateto").value;
+  const days = document.getElementById("t_days").value;
+  const destInputs = Array.from(document.querySelectorAll("#destList .dest-input")).map(i => i.value.trim()).filter(Boolean);
+  const destinations = destInputs.map((d, i) => `${i + 1}. ${d}`).join("\n");
   const pax_adults = document.getElementById("t_adults").value;
   const pax_children = document.getElementById("t_children").value;
   const pax_infants = document.getElementById("t_infants").value;
   const pax_elderly = document.getElementById("t_elderly").value;
-  const amount_client_pays = document.getElementById("t_clientpays").value;
-  if (!pax_or_days || !cost) { alert("Pax/days and cost are required."); return; }
+  const cost = document.getElementById("t_cost").value;
+  const status = document.getElementById("t_status").value;
+
+  let tier_name = "", price_per_unit = 0, pax_or_days = 0, amount_client_pays = 0;
+  if (tour_category === "only_booking") {
+    amount_client_pays = document.getElementById("t_clientpays").value;
+    tier_name = "Booking Assistance";
+  } else if (tour_category === "custom_itinerary") {
+    tier_name = "Custom Itinerary";
+  } else {
+    [tier_name, price_per_unit] = document.getElementById("t_tier").value.split("|");
+    pax_or_days = document.getElementById("t_qty").value;
+  }
 
   await NEXUS.post("/api/business/tours", {
-    tour_type, tier_name, pax_or_days, price_per_unit, cost, status,
-    client_name, travel_date, pax_adults, pax_children, pax_infants, pax_elderly, amount_client_pays,
+    tour_category, tier_name, pax_or_days, price_per_unit, cost, status,
+    client_name, date_from, date_to, days, destinations,
+    pax_adults, pax_children, pax_infants, pax_elderly, amount_client_pays,
   });
   NEXUS.closeSheet("tourSheet");
-  ["t_qty","t_cost","t_client","t_date","t_adults","t_children","t_infants","t_elderly","t_clientpays"].forEach(id => document.getElementById(id).value = "");
+  ["t_client","t_datefrom","t_dateto","t_days","t_qty","t_cost","t_adults","t_children","t_infants","t_elderly","t_clientpays"].forEach(id => document.getElementById(id).value = "");
+  resetDestinations();
   loadTours();
 }
 
@@ -669,49 +708,28 @@ async function deleteCRM(id) {
 // =========================================================
 // ITINERARY GENERATOR
 // =========================================================
-async function generateItinerary() {
-  const destinations = document.getElementById("it_destinations").value.split(",").map(s => s.trim()).filter(Boolean);
-  const days = document.getElementById("it_days").value;
-  const use_rideshare = document.getElementById("it_rideshare").checked;
-  if (!destinations.length) { alert("Enter at least one destination."); return; }
-  const res = await NEXUS.post("/api/itinerary/generate", { destinations, days, use_rideshare });
-  const el = document.getElementById("itineraryResult");
-  el.innerHTML = `
-    <div class="section-title">Generated Itinerary</div>
-    ${res.schedule.map(d => `
-      <div class="card">
-        <h3>Day ${d.day}</h3>
-        <div class="meta" style="margin-bottom:8px;">${d.route_note}</div>
-        ${d.legs.map(l => `
-          <div style="border-top:1px solid #EEE; padding-top:8px; margin-top:8px;">
-            <div><strong>📍 ${l.stop}</strong></div>
-            <div class="meta">🏞 ${l.scenery}</div>
-            <div class="meta">🍜 ${l.food}</div>
-            ${l.rideshare ? `<div class="meta">🚗 ${l.rideshare.mode}: ${l.rideshare.from} → ${l.rideshare.to} (~${NEXUS.fmtMoney(l.rideshare.est_cost_idr,'IDR')})</div>` : ''}
-          </div>
-        `).join("")}
-        <div class="row" style="margin-top:8px;"><span class="label">Ticket cost</span><span class="val">${NEXUS.fmtMoney(d.ticket_cost,'IDR')}</span></div>
-        ${d.rideshare_total ? `<div class="row"><span class="label">Rideshare total</span><span class="val">${NEXUS.fmtMoney(d.rideshare_total,'IDR')}</span></div>` : ''}
-      </div>
-    `).join("")}
-    <div class="card">
-      <div class="row"><span class="label">Ticket total</span><span class="val">${NEXUS.fmtMoney(res.ticket_cost_total,'IDR')}</span></div>
-      <div class="row"><span class="label">Rideshare total</span><span class="val">${NEXUS.fmtMoney(res.rideshare_total,'IDR')}</span></div>
-      <div class="row"><span class="label">Service fee (89K/day)</span><span class="val">${NEXUS.fmtMoney(res.service_fee_total,'IDR')}</span></div>
-      <div class="row"><span class="label"><strong>Grand total</strong></span><span class="val"><strong>${NEXUS.fmtMoney(res.grand_total,'IDR')}</strong></span></div>
-    </div>
-    <div class="meta" style="font-style:italic;">${res.note}</div>
-  `;
-}
-
 // =========================================================
 // SOCIAL MEDIA
 // =========================================================
+async function loadEquipmentCheckboxes() {
+  const list = await NEXUS.get("/api/social/equipment-list");
+  const el = document.getElementById("equipmentCheckboxes");
+  el.innerHTML = list.map(eq => `
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+      <input type="checkbox" class="equip-check" value="${eq}" style="width:auto;" /> ${eq}
+    </label>
+  `).join("");
+}
+
 async function generateScript() {
   const account = document.getElementById("s_account").value;
   const topic = document.getElementById("s_topic").value.trim();
+  const duration_sec = document.getElementById("s_duration").value;
+  const platform = document.getElementById("s_platform").value;
+  const language = document.getElementById("s_language").value;
+  const equipment = Array.from(document.querySelectorAll(".equip-check:checked")).map(c => c.value);
   if (!topic) { alert("Enter a topic."); return; }
-  const res = await NEXUS.post("/api/social/generate", { account, topic });
+  const res = await NEXUS.post("/api/social/generate", { account, topic, duration_sec, equipment, platform, language });
   document.getElementById("scriptResult").innerHTML = `
     <div class="card">
       <div class="row"><span class="label">Length</span><span class="val">${res.video_length}</span></div>
@@ -720,7 +738,7 @@ async function generateScript() {
       <div class="row"><span class="label">Platform</span><span class="val">${res.platforms}</span></div>
       <div class="meta" style="white-space:pre-wrap;margin-top:8px;">${res.script}</div>
     </div>
-    <div class="meta" style="margin-top:6px;font-style:italic;">Note: this is a rule-based script template, not a live AI call — wire in a real AI API key for fully generative scripts.</div>
+    <div class="meta" style="margin-top:6px;font-style:italic;">Note: script templates are authored per language, not a live AI translation call — wire in a real AI API key for fully generative scripts.</div>
   `;
 }
 

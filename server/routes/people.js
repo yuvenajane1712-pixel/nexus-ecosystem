@@ -96,12 +96,13 @@ module.exports = function (io) {
   });
 
   router.put("/:id", (req, res) => {
-    const { name, height_cm, weight_kg, age, gender, activity_level, no_red_meat, gluten_free, dairy_free, soy_free, notes, goal_weight_kg, goal_date } = req.body;
+    const { name, height_cm, weight_kg, age, gender, activity_level, no_red_meat, gluten_free, dairy_free, soy_free, notes, goal_weight_kg, goal_date, excluded_foods } = req.body;
     db.prepare(`
-      UPDATE people SET name=?, height_cm=?, weight_kg=?, age=?, gender=?, activity_level=?, no_red_meat=?, gluten_free=?, dairy_free=?, soy_free=?, notes=?, goal_weight_kg=?, goal_date=?
+      UPDATE people SET name=?, height_cm=?, weight_kg=?, age=?, gender=?, activity_level=?, no_red_meat=?, gluten_free=?, dairy_free=?, soy_free=?, notes=?, goal_weight_kg=?, goal_date=?, excluded_foods=?
       WHERE id=?
     `).run(name, height_cm || null, weight_kg || null, age || null, gender || "female", activity_level || "moderate",
-      no_red_meat ? 1 : 0, gluten_free ? 1 : 0, dairy_free ? 1 : 0, soy_free ? 1 : 0, notes || "", goal_weight_kg || null, goal_date || null, req.params.id);
+      no_red_meat ? 1 : 0, gluten_free ? 1 : 0, dairy_free ? 1 : 0, soy_free ? 1 : 0, notes || "", goal_weight_kg || null, goal_date || null,
+      excluded_foods !== undefined ? JSON.stringify(excluded_foods) : "[]", req.params.id);
     emit();
     res.json({ ok: true });
   });
@@ -110,6 +111,12 @@ module.exports = function (io) {
     db.prepare("DELETE FROM people WHERE id=?").run(req.params.id);
     emit();
     res.json({ ok: true });
+  });
+
+  // list of all known foods, used for the "which proteins/carbs does this person eat" picker
+  router.get("/food-options", (req, res) => {
+    const foods = db.prepare("SELECT id, name, category FROM food_items ORDER BY category, name").all();
+    res.json(foods);
   });
 
   // daily needs: BMR/TDEE-based calorie + macro targets, converted into food gram equivalents
@@ -122,11 +129,15 @@ module.exports = function (io) {
     const goalWeight = person.goal_weight_kg || null;
     const needs = calcDailyNeeds(person, goalWeight);
     const foods = db.prepare("SELECT * FROM food_items").all();
+    let excluded = [];
+    try { excluded = JSON.parse(person.excluded_foods || "[]"); } catch (e) {}
 
     let proteinFoods = foodEquivalents(needs.proteinG, "protein", foods);
     if (person.no_red_meat) proteinFoods = proteinFoods.filter((f) => !["Pork (lean)", "Beef (lean)"].includes(f.food));
+    proteinFoods = proteinFoods.filter((f) => !excluded.includes(f.food));
 
-    const carbFoods = foodEquivalents(needs.carbG, "carb", foods);
+    let carbFoods = foodEquivalents(needs.carbG, "carb", foods).filter((f) => !excluded.includes(f.food));
+    let fiberFoods = foodEquivalents(needs.fiberG, "veggie", foods).filter((f) => !excluded.includes(f.food));
     const waterTargetMl = Math.round((person.weight_kg || 60) * 33); // ~33ml/kg bodyweight, standard hydration guidance
 
     res.json({
@@ -135,8 +146,10 @@ module.exports = function (io) {
       protein_target_g: needs.proteinG, fat_target_g: needs.fatG, carb_target_g: needs.carbG, fiber_target_g: needs.fiberG,
       water_target_ml: waterTargetMl,
       goal_weight_kg: person.goal_weight_kg, goal_date: person.goal_date,
+      excluded_foods: excluded,
       protein_food_equivalents: proteinFoods,
       carb_food_equivalents: carbFoods,
+      fiber_food_equivalents: fiberFoods,
       veggie_suggestion_g: 400,
       fruit_suggestion_g: 250,
       note: "Calculated using the Mifflin-St Jeor BMR formula and standard food composition data — not a live AI call. Food-equivalent grams assume getting 100% of that macro from a single food; in practice you'll mix sources.",

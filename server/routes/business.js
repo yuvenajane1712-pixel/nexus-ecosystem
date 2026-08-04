@@ -271,24 +271,39 @@ module.exports = function (io) {
 
   router.post("/tours", (req, res) => {
     const {
-      tour_type, tier_name, pax_or_days, price_per_unit, cost, status,
-      client_name, travel_date, pax_adults, pax_children, pax_infants, pax_elderly, amount_client_pays,
+      tour_category, tier_name, pax_or_days, price_per_unit, cost, status,
+      client_name, date_from, date_to, days, destinations, pax_adults, pax_children, pax_infants, pax_elderly, amount_client_pays,
     } = req.body;
-    // if an explicit amount the client pays is given, use that as revenue; otherwise fall back to pax/day × tier price
-    const computedRevenue = (Number(pax_or_days) || 0) * (Number(price_per_unit) || 0);
-    const revenue = amount_client_pays ? Number(amount_client_pays) : computedRevenue;
+
+    const category = tour_category || "bigbus";
     const c = Number(cost) || 0;
+    let revenue = 0;
+
+    if (category === "only_booking") {
+      // pure booking help — 5% fee on the amount the client wants booked
+      revenue = Number(amount_client_pays) || 0;
+    } else if (category === "custom_itinerary") {
+      // 89,000 IDR per day
+      revenue = (Number(days) || 0) * 89000;
+    } else {
+      // bigbus / private — pax/day × tier price, or explicit amount_client_pays overrides
+      const computedRevenue = (Number(pax_or_days) || 0) * (Number(price_per_unit) || 0);
+      revenue = amount_client_pays ? Number(amount_client_pays) : computedRevenue;
+    }
+
     const bookingFee = revenue * 0.05;
     const margin = revenue - c;
 
     const info = db.prepare(`
       INSERT INTO tours (
         tour_type, tier_name, pax_or_days, revenue, cost, margin, booking_fee, status,
-        client_name, travel_date, pax_adults, pax_children, pax_infants, pax_elderly, amount_client_pays
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        client_name, travel_date, pax_adults, pax_children, pax_infants, pax_elderly, amount_client_pays,
+        tour_category, date_from, date_to, days, destinations
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
-      tour_type, tier_name, pax_or_days || 0, revenue, c, margin, bookingFee, status || "open",
-      client_name || "", travel_date || "", pax_adults || 0, pax_children || 0, pax_infants || 0, pax_elderly || 0, Number(amount_client_pays) || 0
+      category, tier_name || "", pax_or_days || 0, revenue, c, margin, bookingFee, status || "open",
+      client_name || "", date_from || "", pax_adults || 0, pax_children || 0, pax_infants || 0, pax_elderly || 0, Number(amount_client_pays) || 0,
+      category, date_from || "", date_to || "", days || 0, destinations || ""
     );
 
     emit();
@@ -297,7 +312,7 @@ module.exports = function (io) {
       const fx = getFxRate(); // IDR per RMB
       const marginRmb = margin / fx;
       db.prepare("INSERT INTO transactions (kind, category, amount_rmb, source, note) VALUES (?,?,?,?,?)")
-        .run("income", "Guangzhou Mate Tour Revenue", marginRmb, "business", `Tour #${info.lastInsertRowid} (${tier_name}) - ${margin.toLocaleString()} IDR @ ${fx}`);
+        .run("income", "Guangzhou Mate Tour Revenue", marginRmb, "business", `Tour #${info.lastInsertRowid} (${tier_name || category}) - ${margin.toLocaleString()} IDR @ ${fx}`);
       emitBudget();
     }
 

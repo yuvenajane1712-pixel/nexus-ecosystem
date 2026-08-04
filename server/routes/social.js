@@ -10,29 +10,12 @@ const ACCOUNTS = {
   "Indocha Cooking": { focus: ["Indonesian recipes", "F&B prep"], platform: "YouTube" },
 };
 
-const EQUIPMENT = [
-  { name: "DJI Osmo Pocket 3", best_for: ["vlog", "handheld", "walk-and-talk", "b-roll"] },
-  { name: "Insta360 X5", best_for: ["360", "action", "travel", "sports"] },
-  { name: "Insta360 Go 3S", best_for: ["pov", "hands-free", "pet", "quick clips"] },
-  { name: "Insta360 Ace Pro 2", best_for: ["action", "outdoor", "cooking overhead"] },
-  { name: "GoPro Hero Max 360", best_for: ["extreme", "360", "sports"] },
-  { name: "Sony A7S3", best_for: ["cinematic", "low light", "interview", "studio"] },
-  { name: "Sony A6400", best_for: ["talking head", "static shot", "product shot"] },
-  { name: "iPhone 16 Pro Max", best_for: ["quick", "everyday", "story", "spontaneous"] },
-  { name: "DJI Microphone (x2)", best_for: ["interview", "talking head", "voiceover"] },
+const EQUIPMENT_LIST = [
+  "DJI Osmo Pocket 3", "Insta360 X5", "Insta360 Go 3S", "Insta360 Ace Pro 2",
+  "GoPro Hero Max 360", "Sony A7S3", "Sony A6400", "iPhone 16 Pro Max", "DJI Microphone (x2)",
 ];
 
-function matchEquipment(topic) {
-  const t = topic.toLowerCase();
-  const scored = EQUIPMENT.map((e) => ({
-    ...e,
-    score: e.best_for.filter((tag) => t.includes(tag.split(" ")[0])).length,
-  }));
-  scored.sort((a, b) => b.score - a.score);
-  const picks = scored.filter((s) => s.score > 0).slice(0, 2);
-  if (picks.length === 0) return ["iPhone 16 Pro Max", "DJI Microphone (x2)"];
-  return picks.map((p) => p.name);
-}
+const PLATFORMS = ["TikTok", "Instagram", "Douyin", "Xiaohongshu", "YouTube"];
 
 function bestPostingTime(platform) {
   const times = {
@@ -45,24 +28,59 @@ function bestPostingTime(platform) {
   return times[platform] || "7:00–9:00 PM";
 }
 
-function generateScript(account, topic) {
-  const acct = ACCOUNTS[account] || { focus: [], platform: "TikTok" };
-  const equipment = matchEquipment(topic);
-  const length = topic.toLowerCase().includes("tutorial") || topic.toLowerCase().includes("recipe") ? "60–90 sec" : "20–35 sec";
-  const script = [
+// script templates authored per language — structure is the same, wording is native to each language,
+// NOT a live translation call (no AI API wired in)
+const TEMPLATES = {
+  en: (topic, niche, platform, duration) => [
     `HOOK (0-3s): Open on a strong visual tied to "${topic}" — jump straight into the moment, no intro speech.`,
-    `SETUP (3-10s): One sentence of context — why this matters to your audience (${acct.focus[0] || "your niche"}).`,
-    `BODY (10-${length.includes("60") ? "70" : "25"}s): 3 quick beats — show, don't just tell. Cut every 2-3 seconds to keep pace.`,
+    `SETUP (3-10s): One sentence of context — why this matters to your audience (${niche}).`,
+    `BODY (10s-${duration}): 3 quick beats — show, don't just tell. Cut every 2-3 seconds to keep pace.`,
     `PAYOFF: Land on the single takeaway or result. Text overlay reinforcing the key point.`,
     `CTA (last 3s): Ask a specific question tied to "${topic}" to drive comments, or point to a saved/pinned resource.`,
-  ].join("\n");
+    ``,
+    `Thumbnail/poster text: bold 3-5 word hook related to "${topic}"`,
+    `Filming style: fast cuts, handheld movement, natural light, face-to-camera for the hook`,
+    `Best time to post on ${platform}: ${bestPostingTime(platform)}`,
+  ].join("\n"),
+  zh: (topic, niche, platform, duration) => [
+    `钩子 (0-3秒)：直接展示与"${topic}"相关的强视觉画面，不要用开场白。`,
+    `铺垫 (3-10秒)：用一句话说明为什么这对你的观众(${niche})很重要。`,
+    `正文 (10秒-${duration})：3个快节奏片段——用画面说话，每2-3秒切一次镜头。`,
+    `结果：落到一个核心收获或结果上，用文字叠加强调重点。`,
+    `行动号召 (最后3秒)：针对"${topic}"提一个具体问题引导评论，或引导保存/置顶资源。`,
+    ``,
+    `封面/缩略图文字：与"${topic}"相关的3-5个字强钩子`,
+    `拍摄风格：快节奏剪辑、手持运镜、自然光、开头面对镜头说话`,
+    `${platform}最佳发布时间：${bestPostingTime(platform)}`,
+  ].join("\n"),
+  id: (topic, niche, platform, duration) => [
+    `HOOK (0-3 dtk): Mulai dengan visual kuat terkait "${topic}" — langsung ke intinya, tanpa basa-basi.`,
+    `SETUP (3-10 dtk): Satu kalimat konteks — kenapa ini penting buat audiens kamu (${niche}).`,
+    `ISI (10 dtk-${duration}): 3 beat cepat — tunjukkan, jangan cuma cerita. Potong setiap 2-3 detik biar ritmenya cepat.`,
+    `HASIL: Tutup dengan satu poin utama atau hasil. Tambahkan teks di layar untuk menegaskan poin itu.`,
+    `CTA (3 dtk terakhir): Tanyakan sesuatu yang spesifik soal "${topic}" biar orang komen, atau arahkan ke konten tersimpan/pin.`,
+    ``,
+    `Teks thumbnail/poster: 3-5 kata hook terkait "${topic}"`,
+    `Gaya syuting: potongan cepat, kamera handheld, cahaya natural, hadap kamera saat hook`,
+    `Waktu terbaik posting di ${platform}: ${bestPostingTime(platform)}`,
+  ].join("\n"),
+};
+
+function generateScript({ account, topic, duration_sec, equipment, platform, language }) {
+  const acct = ACCOUNTS[account] || { focus: [], platform: "TikTok" };
+  const niche = acct.focus[0] || "your niche";
+  const dur = duration_sec ? `${duration_sec}s` : "30s";
+  const plat = platform || acct.platform;
+  const lang = TEMPLATES[language] ? language : "en";
+  const script = TEMPLATES[lang](topic, niche, plat, dur);
 
   return {
     script,
-    equipment: equipment.join(", "),
-    video_length: length,
-    best_time: bestPostingTime(acct.platform),
-    platforms: acct.platform,
+    equipment: (equipment && equipment.length) ? equipment.join(", ") : "iPhone 16 Pro Max, DJI Microphone (x2)",
+    video_length: dur,
+    best_time: bestPostingTime(plat),
+    platforms: plat,
+    language: lang,
   };
 }
 
@@ -71,11 +89,13 @@ module.exports = function (io) {
   const emit = () => io.emit("data:change", { module: "social" });
 
   router.get("/accounts", (req, res) => res.json(ACCOUNTS));
+  router.get("/equipment-list", (req, res) => res.json(EQUIPMENT_LIST));
+  router.get("/platforms", (req, res) => res.json(PLATFORMS));
 
   router.post("/generate", (req, res) => {
-    const { account, topic } = req.body;
+    const { account, topic, duration_sec, equipment, platform, language } = req.body;
     if (!account || !topic) return res.status(400).json({ error: "account and topic required" });
-    const result = generateScript(account, topic);
+    const result = generateScript({ account, topic, duration_sec, equipment, platform, language });
     res.json(result);
   });
 
@@ -117,7 +137,6 @@ module.exports = function (io) {
     res.json({ ok: true });
   });
 
-  // auto-fill a 6-month calendar: 1 post/account/day with rotating topics from that account's focus areas
   router.post("/posts/seed-calendar", (req, res) => {
     const existing = db.prepare("SELECT COUNT(*) c FROM social_posts").get().c;
     if (existing > 0) return res.json({ skipped: true, existing });
@@ -134,7 +153,7 @@ module.exports = function (io) {
       const dateStr = date.toISOString().slice(0, 10);
       Object.entries(ACCOUNTS).forEach(([account, meta]) => {
         const topic = meta.focus[d % meta.focus.length];
-        const gen = generateScript(account, topic);
+        const gen = generateScript({ account, topic, platform: meta.platform, language: "en" });
         stmt.run(account, dateStr, topic, gen.script, gen.equipment, gen.video_length, gen.best_time, gen.platforms);
         count++;
       });

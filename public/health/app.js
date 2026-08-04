@@ -4,7 +4,11 @@ let goalWeight = null;
 let foodCache = [];
 
 document.getElementById("fabBtn").addEventListener("click", () => NEXUS.openSheet("actionSheet"));
-function openForm(id) { NEXUS.closeSheet("actionSheet"); NEXUS.openSheet(id); }
+function openForm(id) {
+  NEXUS.closeSheet("actionSheet");
+  if (id === "personSheet") renderFoodExclusions("p_foodExclusions", []);
+  NEXUS.openSheet(id);
+}
 
 function toggleMetricFields() {
   const type = document.getElementById("m_type").value;
@@ -104,14 +108,31 @@ async function refreshAll() {
   await loadSupplements();
 }
 
+async function renderFoodExclusions(containerId, excludedList) {
+  const foods = await NEXUS.get("/api/people/food-options");
+  const proteinCarb = foods.filter(f => f.category === "protein" || f.category === "carb" || f.category === "veggie");
+  const el = document.getElementById(containerId);
+  el.innerHTML = proteinCarb.map(f => `
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+      <input type="checkbox" class="food-excl-check" value="${f.name}" ${excludedList.includes(f.name) ? '' : 'checked'} style="width:auto;" /> ${f.name} <span class="meta">(${f.category})</span>
+    </label>
+  `).join("");
+}
+function collectExcludedFoods(containerId) {
+  return Array.from(document.querySelectorAll(`#${containerId} .food-excl-check:not(:checked)`)).map(c => c.value);
+}
+
 function openUpdatePerson() {
-  NEXUS.get(`/api/people`).then(people => {
+  NEXUS.get(`/api/people`).then(async people => {
     const p = people.find(pp => pp.id === currentPersonId);
     document.getElementById("up_height").value = p.height_cm || "";
     document.getElementById("up_weight").value = p.weight_kg || "";
     document.getElementById("up_age").value = p.age || "";
     document.getElementById("up_goal").value = p.goal_weight_kg || "";
     document.getElementById("up_goal_date").value = p.goal_date || "";
+    let excluded = [];
+    try { excluded = JSON.parse(p.excluded_foods || "[]"); } catch (e) {}
+    await renderFoodExclusions("up_foodExclusions", excluded);
     NEXUS.openSheet("updatePersonSheet");
   });
 }
@@ -122,9 +143,10 @@ async function submitPersonUpdate() {
   const age = document.getElementById("up_age").value;
   const goal_weight_kg = document.getElementById("up_goal").value || null;
   const goal_date = document.getElementById("up_goal_date").value || null;
+  const excluded_foods = collectExcludedFoods("up_foodExclusions");
   const people = await NEXUS.get("/api/people");
   const p = people.find(pp => pp.id === currentPersonId);
-  await NEXUS.put(`/api/people/${currentPersonId}`, { ...p, height_cm, weight_kg, age, goal_weight_kg, goal_date });
+  await NEXUS.put(`/api/people/${currentPersonId}`, { ...p, height_cm, weight_kg, age, goal_weight_kg, goal_date, excluded_foods });
   NEXUS.closeSheet("updatePersonSheet");
   refreshAll();
 }
@@ -378,6 +400,7 @@ async function submitGrocery() {
 async function submitPerson() {
   const name = document.getElementById("p_name").value.trim();
   if (!name) { alert("Name is required."); return; }
+  const excluded_foods = collectExcludedFoods("p_foodExclusions");
   const res = await NEXUS.post("/api/people", {
     name,
     height_cm: document.getElementById("p_height").value,
@@ -390,9 +413,65 @@ async function submitPerson() {
     dairy_free: document.getElementById("p_dairyfree").checked,
     soy_free: document.getElementById("p_soyfree").checked,
   });
+  await NEXUS.put(`/api/people/${res.id}`, {
+    name, height_cm: document.getElementById("p_height").value, weight_kg: document.getElementById("p_weight").value,
+    age: document.getElementById("p_age").value, gender: document.getElementById("p_gender").value,
+    activity_level: document.getElementById("p_activity").value,
+    goal_weight_kg: document.getElementById("p_goal").value || null,
+    goal_date: document.getElementById("p_goal_date").value || null,
+    excluded_foods,
+  });
   NEXUS.closeSheet("personSheet");
-  ["p_name","p_height","p_weight","p_age"].forEach(id => document.getElementById(id).value = "");
+  ["p_name","p_height","p_weight","p_age","p_goal","p_goal_date"].forEach(id => document.getElementById(id).value = "");
   currentPersonId = res.id;
+  refreshAll();
+}
+
+// ===== batch meal entry (Meal A / B / C for one slot) =====
+let mbRowCount = 0;
+function addMealBatchRow() {
+  mbRowCount++;
+  const el = document.getElementById("mb_rows");
+  const letter = String.fromCharCode(64 + mbRowCount); // A, B, C...
+  const row = document.createElement("div");
+  row.className = "card";
+  row.innerHTML = `
+    <div class="row"><span class="label"><strong>Meal ${letter}</strong></span><button class="small secondary" type="button" onclick="this.closest('.card').remove()">✕</button></div>
+    <label>Name / menu</label>
+    <input type="text" class="mb-name" placeholder="e.g. Grilled chicken rice bowl" />
+    <div class="grid2">
+      <div><label>Grams</label><input type="number" class="mb-grams" placeholder="200" /></div>
+      <div><label>Calories</label><input type="number" class="mb-kcal" placeholder="350" /></div>
+    </div>
+    <label>Cooking method</label>
+    <input type="text" class="mb-cooking" placeholder="e.g. grilled" />
+  `;
+  el.appendChild(row);
+}
+function resetMealBatch() {
+  document.getElementById("mb_rows").innerHTML = "";
+  mbRowCount = 0;
+  addMealBatchRow();
+}
+function openMealBatch() {
+  NEXUS.closeSheet("actionSheet");
+  resetMealBatch();
+  NEXUS.openSheet("mealBatchSheet");
+}
+
+async function submitMealBatch() {
+  const meal_slot = document.getElementById("mb_slot").value;
+  const rows = document.querySelectorAll("#mb_rows .card");
+  const items = Array.from(rows).map(row => ({
+    name: row.querySelector(".mb-name").value.trim(),
+    grams: row.querySelector(".mb-grams").value,
+    calories: row.querySelector(".mb-kcal").value,
+    cooking_method: row.querySelector(".mb-cooking").value,
+  })).filter(i => i.name);
+  if (!items.length) { alert("Add at least one meal item with a name."); return; }
+
+  await NEXUS.post("/api/health/logs/meal-batch", { user_name: currentPersonName, meal_slot, items });
+  NEXUS.closeSheet("mealBatchSheet");
   refreshAll();
 }
 
