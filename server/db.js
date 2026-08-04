@@ -412,6 +412,43 @@ try { db.exec("ALTER TABLE track_b_orders ADD COLUMN payment_date TEXT"); } catc
 try { db.exec("ALTER TABLE tours ADD COLUMN invoice_number TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE tours ADD COLUMN payment_date TEXT"); } catch (e) {}
 
+// Saved bank accounts (selectable per invoice, not tied to one CRM contact)
+db.exec(`
+CREATE TABLE IF NOT EXISTS bank_accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bank_name TEXT,
+  account_name TEXT,
+  account_number TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+`);
+
+// CRM: bank fields on any contact (e.g. supplier's own bank info), and a dedicated "team_member" kind
+try { db.exec("ALTER TABLE clients ADD COLUMN bank_name TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE clients ADD COLUMN bank_account_name TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE clients ADD COLUMN bank_account_number TEXT"); } catch (e) {}
+
+// Orders: which saved bank account + which team member to show on the invoice
+try { db.exec("ALTER TABLE orders ADD COLUMN bank_account_id INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE orders ADD COLUMN team_member_id INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN bank_account_id INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN team_member_id INTEGER"); } catch (e) {}
+
+// Guangzhou Mate: itemized customer-facing cost list, food preferences, new 5-stage status
+db.exec(`
+CREATE TABLE IF NOT EXISTS tour_cost_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tour_id INTEGER,
+  label TEXT,
+  amount REAL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+`);
+try { db.exec("ALTER TABLE tours ADD COLUMN food_wanted TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN food_avoid TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN tour_status TEXT DEFAULT 'just_order'"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN feedback_json TEXT"); } catch (e) {}
+
 // People: weight goal + target date, water target
 try { db.exec("ALTER TABLE people ADD COLUMN goal_weight_kg REAL"); } catch (e) {}
 try { db.exec("ALTER TABLE people ADD COLUMN goal_date TEXT"); } catch (e) {}

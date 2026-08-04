@@ -162,21 +162,21 @@ module.exports = function (io) {
 
   // create an order shell (buyer + fee); products added as line items afterward
   router.post("/orders", (req, res) => {
-    const { buyer_name, fee_pct, urgency, markup_mode, markup_pct } = req.body;
+    const { buyer_name, fee_pct, urgency, markup_mode, markup_pct, bank_account_id, team_member_id } = req.body;
     if (!buyer_name) return res.status(400).json({ error: "buyer_name required" });
     const fx = getFxRate();
     const existingCount = db.prepare("SELECT COUNT(*) c FROM orders").get().c;
     const invoiceNumber = `${existingCount + 1}A`;
     const info = db.prepare(`
-      INSERT INTO orders (buyer_name, product_cost, fee_pct, logistics_cost, service_fee, total_payment, net_profit, fx_rate, urgency, status, pipeline_status, markup_mode, markup_pct, invoice_number)
-      VALUES (?,0,?,0,0,0,0,?,?, 'open', 'lagi_dicari', ?, ?, ?)
-    `).run(buyer_name, fee_pct || 10, fx, urgency || 1, markup_mode || "fee", markup_pct || 0, invoiceNumber);
+      INSERT INTO orders (buyer_name, product_cost, fee_pct, logistics_cost, service_fee, total_payment, net_profit, fx_rate, urgency, status, pipeline_status, markup_mode, markup_pct, invoice_number, bank_account_id, team_member_id)
+      VALUES (?,0,?,0,0,0,0,?,?, 'open', 'lagi_dicari', ?, ?, ?, ?, ?)
+    `).run(buyer_name, fee_pct || 10, fx, urgency || 1, markup_mode || "fee", markup_pct || 0, invoiceNumber, bank_account_id || null, team_member_id || null);
     emit();
     res.json({ id: info.lastInsertRowid, invoice_number: invoiceNumber });
   });
 
   router.put("/orders/:id", (req, res) => {
-    const { buyer_name, fee_pct, urgency, markup_mode, markup_pct, logistics_tracking_code } = req.body;
+    const { buyer_name, fee_pct, urgency, markup_mode, markup_pct, logistics_tracking_code, bank_account_id, team_member_id } = req.body;
     const fields = [], params = [];
     if (buyer_name !== undefined) { fields.push("buyer_name=?"); params.push(buyer_name); }
     if (fee_pct !== undefined) { fields.push("fee_pct=?"); params.push(fee_pct); }
@@ -184,6 +184,8 @@ module.exports = function (io) {
     if (markup_mode !== undefined) { fields.push("markup_mode=?"); params.push(markup_mode); }
     if (markup_pct !== undefined) { fields.push("markup_pct=?"); params.push(markup_pct); }
     if (logistics_tracking_code !== undefined) { fields.push("logistics_tracking_code=?"); params.push(logistics_tracking_code); }
+    if (bank_account_id !== undefined) { fields.push("bank_account_id=?"); params.push(bank_account_id); }
+    if (team_member_id !== undefined) { fields.push("team_member_id=?"); params.push(team_member_id); }
     if (fields.length) {
       params.push(req.params.id);
       db.prepare(`UPDATE orders SET ${fields.join(", ")} WHERE id=?`).run(...params);
@@ -287,10 +289,37 @@ module.exports = function (io) {
     res.json(db.prepare("SELECT * FROM tours ORDER BY created_at DESC").all());
   });
 
+  const TOUR_PIPELINE = [
+    { key: "just_order", label: "Just Order" },
+    { key: "already_book", label: "Already Book" },
+    { key: "already_pay", label: "Already Pay" },
+    { key: "already_ongoing", label: "Already Ongoing" },
+    { key: "already_done", label: "Already Done" },
+  ];
+  router.get("/tours/pipeline-stages", (req, res) => res.json(TOUR_PIPELINE));
+
+  // ---- itemized customer-facing cost list (Transport: X, Food: Y, ...) ----
+  router.get("/tours/:id/cost-items", (req, res) => {
+    res.json(db.prepare("SELECT * FROM tour_cost_items WHERE tour_id=? ORDER BY id").all(req.params.id));
+  });
+  router.post("/tours/:id/cost-items", (req, res) => {
+    const { label, amount } = req.body;
+    if (!label) return res.status(400).json({ error: "label required" });
+    const info = db.prepare("INSERT INTO tour_cost_items (tour_id, label, amount) VALUES (?,?,?)").run(req.params.id, label, Number(amount) || 0);
+    emit();
+    res.json({ id: info.lastInsertRowid });
+  });
+  router.delete("/tours/:id/cost-items/:itemId", (req, res) => {
+    db.prepare("DELETE FROM tour_cost_items WHERE id=?").run(req.params.itemId);
+    emit();
+    res.json({ ok: true });
+  });
+
   router.post("/tours", (req, res) => {
     const {
       tour_category, tier_name, pax_or_days, price_per_unit, cost, status,
       client_name, date_from, date_to, days, destinations, pax_adults, pax_children, pax_infants, pax_elderly, amount_client_pays,
+      food_wanted, food_avoid, bank_account_id, team_member_id,
     } = req.body;
 
     const category = tour_category || "bigbus";
@@ -320,12 +349,14 @@ module.exports = function (io) {
       INSERT INTO tours (
         tour_type, tier_name, pax_or_days, revenue, cost, margin, booking_fee, status,
         client_name, travel_date, pax_adults, pax_children, pax_infants, pax_elderly, amount_client_pays,
-        tour_category, date_from, date_to, days, destinations, invoice_number
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        tour_category, date_from, date_to, days, destinations, invoice_number,
+        food_wanted, food_avoid, tour_status, bank_account_id, team_member_id
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'just_order',?,?)
     `).run(
       category, tier_name || "", pax_or_days || 0, revenue, c, margin, bookingFee, status || "open",
       client_name || "", date_from || "", pax_adults || 0, pax_children || 0, pax_infants || 0, pax_elderly || 0, Number(amount_client_pays) || 0,
-      category, date_from || "", date_to || "", days || 0, destinations || "", invoiceNumber
+      category, date_from || "", date_to || "", days || 0, destinations || "", invoiceNumber,
+      food_wanted || "", food_avoid || "", bank_account_id || null, team_member_id || null
     );
 
     emit();
@@ -340,6 +371,53 @@ module.exports = function (io) {
     }
 
     res.json({ id: info.lastInsertRowid, revenue, margin, booking_fee: bookingFee, invoice_number: invoiceNumber });
+  });
+
+  // ---- tour status pipeline (drives the auto-generated feedback questionnaire on "already_done") ----
+  router.put("/tours/:id/status", (req, res) => {
+    const { tour_status } = req.body;
+    const tour = db.prepare("SELECT * FROM tours WHERE id=?").get(req.params.id);
+    if (!tour) return res.status(404).json({ error: "not found" });
+    const wasDone = tour.tour_status === "already_done";
+
+    if (tour_status === "already_pay" && tour.tour_status !== "already_pay") {
+      db.prepare("UPDATE tours SET payment_date=date('now') WHERE id=?").run(req.params.id);
+    }
+    db.prepare("UPDATE tours SET tour_status=? WHERE id=?").run(tour_status, req.params.id);
+
+    if (tour_status === "already_done" && !wasDone) {
+      db.prepare("UPDATE tours SET status='completed' WHERE id=?").run(req.params.id);
+      const fx = getFxRate();
+      db.prepare("INSERT INTO transactions (kind, category, amount_rmb, source, note) VALUES (?,?,?,?,?)")
+        .run("income", "Guangzhou Mate Tour Revenue", tour.margin / fx, "business", `Tour #${tour.invoice_number || tour.id} - ${tour.margin.toLocaleString()} IDR @ ${fx}`);
+      emitBudget();
+    }
+    emit();
+    res.json({ ok: true });
+  });
+
+  // auto-generated post-trip feedback questionnaire (fixed, well-designed template — not a live AI call)
+  router.get("/tours/:id/feedback-form", (req, res) => {
+    const tour = db.prepare("SELECT * FROM tours WHERE id=?").get(req.params.id);
+    if (!tour) return res.status(404).json({ error: "not found" });
+    const questions = [
+      "Overall, how would you rate your trip experience? (1-5 stars)",
+      "Which part of the trip did you enjoy the most?",
+      "Was the itinerary paced well, or did it feel too rushed / too slow?",
+      "How was the food selection — anything you'd want more or less of next time?",
+      "How was the transportation and driver/guide service?",
+      "Was communication with our team clear and timely throughout?",
+      "Would you recommend Guangzhou Mate to a friend or colleague?",
+      "Any suggestions for how we could improve future trips?",
+    ];
+    res.json({ tour_id: tour.id, invoice_number: tour.invoice_number, client_name: tour.client_name, questions });
+  });
+
+  router.post("/tours/:id/feedback", (req, res) => {
+    const { answers } = req.body;
+    db.prepare("UPDATE tours SET feedback_json=? WHERE id=?").run(JSON.stringify(answers || {}), req.params.id);
+    emit();
+    res.json({ ok: true });
   });
 
   router.put("/tours/:id/complete", (req, res) => {

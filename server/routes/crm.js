@@ -19,22 +19,27 @@ module.exports = function (io) {
   });
 
   router.post("/", (req, res) => {
-    const { kind, company_name, person_name, whatsapp, wechat, phone, address, alibaba_link, tier } = req.body;
+    const { kind, company_name, person_name, whatsapp, wechat, phone, address, alibaba_link, tier, bank_name, bank_account_name, bank_account_number, certificates } = req.body;
     const displayName = company_name || person_name || "Unnamed";
     const info = db.prepare(`
-      INSERT INTO clients (kind, name, company_name, person_name, whatsapp, wechat, phone, address, alibaba_link, tier)
-      VALUES (?,?,?,?,?,?,?,?,?,?)
-    `).run(kind, displayName, company_name || "", person_name || "", whatsapp || "", wechat || "", phone || "", address || "", alibaba_link || "", tier || "");
+      INSERT INTO clients (kind, name, company_name, person_name, whatsapp, wechat, phone, address, alibaba_link, tier, bank_name, bank_account_name, bank_account_number)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(kind, displayName, company_name || "", person_name || "", whatsapp || "", wechat || "", phone || "", address || "", alibaba_link || "", tier || "",
+      bank_name || "", bank_account_name || "", bank_account_number || "");
+    if (Array.isArray(certificates)) {
+      const certStmt = db.prepare("INSERT INTO client_certificates (client_id, cert_name) VALUES (?,?)");
+      certificates.filter(Boolean).forEach((c) => certStmt.run(info.lastInsertRowid, c));
+    }
     emit();
     res.json({ id: info.lastInsertRowid });
   });
 
   router.put("/:id", (req, res) => {
-    const { company_name, person_name, whatsapp, wechat, phone, address, alibaba_link, tier } = req.body;
+    const { company_name, person_name, whatsapp, wechat, phone, address, alibaba_link, tier, bank_name, bank_account_name, bank_account_number } = req.body;
     const displayName = company_name || person_name || "Unnamed";
     db.prepare(`
-      UPDATE clients SET name=?, company_name=?, person_name=?, whatsapp=?, wechat=?, phone=?, address=?, alibaba_link=?, tier=? WHERE id=?
-    `).run(displayName, company_name, person_name, whatsapp, wechat, phone, address, alibaba_link, tier, req.params.id);
+      UPDATE clients SET name=?, company_name=?, person_name=?, whatsapp=?, wechat=?, phone=?, address=?, alibaba_link=?, tier=?, bank_name=?, bank_account_name=?, bank_account_number=? WHERE id=?
+    `).run(displayName, company_name, person_name, whatsapp, wechat, phone, address, alibaba_link, tier, bank_name || "", bank_account_name || "", bank_account_number || "", req.params.id);
     emit();
     res.json({ ok: true });
   });

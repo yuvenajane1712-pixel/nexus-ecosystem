@@ -29,6 +29,14 @@ function actionChosen(i) {
   window.__actionOptions[i].onSelect();
 }
 
+async function loadCRMDropdown(selectId, kinds, includeBlank) {
+  const all = await NEXUS.get("/api/crm");
+  const filtered = kinds ? all.filter(c => kinds.includes(c.kind)) : all;
+  const sel = document.getElementById(selectId);
+  const opts = filtered.map(c => `<option value="${c.id}">${c.company_name || c.person_name || c.name}</option>`).join("");
+  sel.innerHTML = (includeBlank ? '<option value="">— none —</option>' : '') + opts;
+}
+
 document.getElementById("fabBtn").addEventListener("click", () => {
   const sheetMap = {
     nadylan: "orderSheet", tours: "tourSheet", trackb: "trackbSheet",
@@ -43,7 +51,9 @@ document.getElementById("fabBtn").addEventListener("click", () => {
   }
   if (activeTab === "social") { alert("Use the Generate Script form above, or Auto-fill calendar."); return; }
   const target = sheetMap[activeTab];
-  if (target === "tourSheet") { resetDestinations(); toggleTourCategory(); }
+  if (target === "tourSheet") { resetDestinations(); resetFoodLists(); resetCustomerCostList(); toggleTourCategory(); loadTourSheetDropdowns(); }
+  if (target === "crmSheet") resetCertRows();
+  if (target === "orderSheet") loadOrderSheetDropdowns();
   if (target) NEXUS.openSheet(target);
 });
 
@@ -72,9 +82,7 @@ async function loadFxRate() {
   document.getElementById("fx_current").textContent = cfg.fx_rate_idr_per_rmb;
   document.getElementById("fx_rate_input").placeholder = cfg.fx_rate_idr_per_rmb;
   document.getElementById("bank_company").value = cfg.company_name || "";
-  document.getElementById("bank_name").value = cfg.bank_name || "";
-  document.getElementById("bank_account_name").value = cfg.bank_account_name || "";
-  document.getElementById("bank_account_number").value = cfg.bank_account_number || "";
+  await loadBankAccountsList();
 }
 
 async function updateFxRate() {
@@ -87,6 +95,36 @@ async function updateFxRate() {
 
 async function updateBankSetting(key, value) {
   await NEXUS.put(`/api/config/${key}`, { value });
+}
+
+async function loadBankAccountsList() {
+  const accounts = await NEXUS.get("/api/bank-accounts");
+  const el = document.getElementById("bankAccountsList");
+  if (!accounts.length) { el.innerHTML = '<div class="empty">No bank accounts saved yet</div>'; return; }
+  el.innerHTML = accounts.map(b => `
+    <div class="list-item">
+      <div>
+        <div><strong>${b.bank_name}</strong></div>
+        <div class="meta">${b.account_name} · ${b.account_number}</div>
+      </div>
+      <button class="small secondary" onclick="deleteBankAccount(${b.id})">✕</button>
+    </div>
+  `).join("");
+}
+
+async function submitBankAccount() {
+  const bank_name = document.getElementById("new_bank_name").value.trim();
+  const account_name = document.getElementById("new_bank_accname").value.trim();
+  const account_number = document.getElementById("new_bank_accnum").value.trim();
+  if (!bank_name || !account_number) { alert("Bank name and account number are required."); return; }
+  await NEXUS.post("/api/bank-accounts", { bank_name, account_name, account_number });
+  ["new_bank_name","new_bank_accname","new_bank_accnum"].forEach(id => document.getElementById(id).value = "");
+  loadBankAccountsList();
+}
+
+async function deleteBankAccount(id) {
+  await NEXUS.del(`/api/bank-accounts/${id}`);
+  loadBankAccountsList();
 }
 
 async function loadTACatalog() {
@@ -186,7 +224,11 @@ function renderOrderCard(o) {
       ${i.photo_data ? `<img class="item-thumb" src="${i.photo_data}" />` : `<div class="item-thumb"></div>`}
       <div class="item-info">
         <div class="name">${i.name}${i.spec ? ' — ' + i.spec : ''}</div>
-        <div class="meta2">qty ${i.qty} × ${i.currency === 'IDR' ? NEXUS.fmtMoney(i.unit_price,'IDR') : NEXUS.fmtMoney(i.unit_price)} <span class="mini-tag">${i.currency || 'RMB'}</span> · CBM ${i.cbm}</div>
+        <div class="meta2" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          qty <input type="number" value="${i.qty}" style="width:50px;padding:4px;margin:0;display:inline-block;" onchange="updateItemField(${o.id},${i.id},'qty',this.value)" />
+          × <input type="number" value="${i.unit_price}" style="width:70px;padding:4px;margin:0;display:inline-block;" onchange="updateItemField(${o.id},${i.id},'unit_price',this.value)" />
+          <span class="mini-tag">${i.currency || 'RMB'}</span> · CBM ${i.cbm}
+        </div>
       </div>
       <button class="small secondary" onclick="deleteItem(${o.id},${i.id})">✕</button>
     </div>
@@ -257,6 +299,10 @@ async function deleteOrder(orderId) {
   loadOrders();
 }
 async function deleteItem(orderId, itemId) { await NEXUS.del(`/api/business/orders/${orderId}/items/${itemId}`); loadOrders(); }
+async function updateItemField(orderId, itemId, field, value) {
+  await NEXUS.put(`/api/business/orders/${orderId}/items/${itemId}`, { [field]: value });
+  loadOrders();
+}
 
 function toggleCategoryFields() {
   const cat = document.getElementById("i_category").value;
@@ -326,26 +372,46 @@ async function loadTours() {
   document.getElementById("openTours").textContent = open;
 
   const CATEGORY_LABELS = { only_booking: "Only Booking (5%)", custom_itinerary: "Custom Itinerary", bigbus: "Big Bus Tour Group", private: "Private Tour" };
+  const TOUR_PIPELINE = [
+    { key: "just_order", label: "Just Order" },
+    { key: "already_book", label: "Already Book" },
+    { key: "already_pay", label: "Already Pay" },
+    { key: "already_ongoing", label: "Already Ongoing" },
+    { key: "already_done", label: "Already Done" },
+  ];
   if (!tours.length) { el.innerHTML = '<div class="empty">No tours yet</div>'; }
   else {
-    el.innerHTML = tours.map(t => `
+    const cards = await Promise.all(tours.map(async (t) => {
+      const costItems = await NEXUS.get(`/api/business/tours/${t.id}/cost-items`);
+      const stIdx = Math.max(0, TOUR_PIPELINE.findIndex(p => p.key === (t.tour_status || "just_order")));
+      return `
       <div class="order-card">
         <div class="order-head">
           <div>
             <strong>${CATEGORY_LABELS[t.tour_category] || t.tier_name}</strong> ${t.client_name ? '— ' + t.client_name : ''}
-            <div class="meta">${t.date_from ? t.date_from + ' → ' + (t.date_to || '') : ''} ${t.days ? '· ' + t.days + ' days' : ''}</div>
+            <div class="meta">Invoice #${t.invoice_number}</div>
+            <div class="meta">${t.date_from ? t.date_from + ' -> ' + (t.date_to || '') : ''} ${t.days ? '· ' + t.days + ' days' : ''}</div>
             <div class="meta">${t.pax_adults||t.pax_children||t.pax_infants||t.pax_elderly ? `${t.pax_adults||0} adult, ${t.pax_children||0} child, ${t.pax_infants||0} infant, ${t.pax_elderly||0} elderly` : ''}</div>
           </div>
-          <div class="tag ${t.status === 'completed' ? 'income' : 'expense'}">${t.status}</div>
         </div>
+        <select class="status-select st-${stIdx}" onchange="updateTourStatus(${t.id}, this.value)">
+          ${TOUR_PIPELINE.map(p => `<option value="${p.key}" ${p.key === (t.tour_status||'just_order') ? 'selected' : ''}>${p.label}</option>`).join("")}
+        </select>
         ${t.destinations ? `<div class="meta" style="white-space:pre-line; margin:6px 0;">📍 ${t.destinations}</div>` : ''}
-        <div class="row"><span class="label">Revenue</span><span class="val">${NEXUS.fmtMoney(t.revenue,'IDR')}</span></div>
+        ${t.food_wanted ? `<div class="meta" style="white-space:pre-line;">🍽 Wants: ${t.food_wanted}</div>` : ''}
+        ${t.food_avoid ? `<div class="meta" style="white-space:pre-line;">🚫 Avoid: ${t.food_avoid}</div>` : ''}
+        ${costItems.length ? `<div class="section-title" style="margin:8px 0 4px;">Customer Cost Items</div>` + costItems.map(c => `<div class="row"><span class="label">${c.label}</span><span class="val">${NEXUS.fmtMoney(c.amount,'IDR')}</span></div>`).join("") : ''}
+        <div class="row" style="margin-top:6px;"><span class="label">Revenue (client pays)</span><span class="val">${NEXUS.fmtMoney(t.revenue,'IDR')}</span></div>
+        ${t.tour_category === 'bigbus' || t.tour_category === 'private' ? `<div class="row"><span class="label">Our cost</span><span class="val">${NEXUS.fmtMoney(t.cost,'IDR')}</span></div>` : ''}
         <div class="row"><span class="label">Booking fee (5%)</span><span class="val">${NEXUS.fmtMoney(t.booking_fee,'IDR')}</span></div>
-        <div class="row"><span class="label"><strong>Net margin</strong></span><span class="val"><strong>${NEXUS.fmtMoney(t.margin,'IDR')}</strong></span></div>
-        <a class="export-link" href="/api/export/tour/${t.id}/pdf" target="_blank">⬇ Export Invoice PDF</a>
-        ${t.status === 'open' ? `<button class="small secondary" style="margin-top:8px;" onclick="completeTour(${t.id})">Mark Completed</button>` : ""}
+        <div class="row"><span class="label"><strong>Net profit</strong></span><span class="val"><strong>${NEXUS.fmtMoney(t.margin,'IDR')}</strong></span></div>
+        <a class="export-link" href="/api/export/tour/${t.id}/pdf" target="_blank">⬇ Export Invoice PDF</a><br>
+        <a class="export-link" href="/api/export/tour/${t.id}/summary-pdf" target="_blank">⬇ Export Trip Summary PDF</a>
+        ${t.tour_status === 'already_done' ? `<button class="small secondary" style="margin-top:8px;" onclick="openFeedback(${t.id})">📋 Feedback Questionnaire</button>` : ""}
       </div>
-    `).join("");
+    `;
+    }));
+    el.innerHTML = cards.join("");
   }
   const orders = await NEXUS.get("/api/business/orders");
   computeProfitSum(orders, tours);
@@ -363,17 +429,28 @@ function toggleMarkupFields() {
   document.getElementById("o_markupPctField").classList.toggle("hidden", mode === "fee");
 }
 
+async function loadOrderSheetDropdowns() {
+  await loadCRMDropdown("o_buyer", ["id_buyer", "cn_buyer"]);
+  await loadCRMDropdown("o_teamMember", ["team_member"], true);
+  const banks = await NEXUS.get("/api/bank-accounts");
+  document.getElementById("o_bankAccount").innerHTML = banks.length
+    ? banks.map(b => `<option value="${b.id}">${b.bank_name} — ${b.account_number}</option>`).join("")
+    : '<option value="">No bank accounts saved — add one in Invoice Settings</option>';
+}
+
 async function submitOrder() {
-  const buyer_name = document.getElementById("o_buyer").value.trim();
+  const buyerSel = document.getElementById("o_buyer");
+  const buyer_name = buyerSel.options[buyerSel.selectedIndex] ? buyerSel.options[buyerSel.selectedIndex].text : "";
   const fee_pct = document.getElementById("o_fee").value || 10;
   const urgency = document.getElementById("o_urgency").value || 1;
   const markup_mode = document.getElementById("o_markupMode").value;
   const markup_pct = document.getElementById("o_markupPct").value || 0;
-  if (!buyer_name) { alert("Buyer name is required."); return; }
+  const bank_account_id = document.getElementById("o_bankAccount").value || null;
+  const team_member_id = document.getElementById("o_teamMember").value || null;
+  if (!buyer_name) { alert("Select a buyer — add one in Contact Info first if the list is empty."); return; }
 
-  await NEXUS.post("/api/business/orders", { buyer_name, fee_pct, urgency, markup_mode, markup_pct });
+  await NEXUS.post("/api/business/orders", { buyer_name, fee_pct, urgency, markup_mode, markup_pct, bank_account_id, team_member_id });
   NEXUS.closeSheet("orderSheet");
-  document.getElementById("o_buyer").value = "";
   loadOrders();
 }
 
@@ -381,6 +458,17 @@ function toggleTourCategory() {
   const cat = document.getElementById("t_category").value;
   document.getElementById("t_tierFields").classList.toggle("hidden", cat === "only_booking" || cat === "custom_itinerary");
   document.getElementById("t_bookingFields").classList.toggle("hidden", cat !== "only_booking");
+  document.getElementById("t_ourCostField").classList.toggle("hidden", cat === "only_booking" || cat === "custom_itinerary");
+}
+
+function autoCalcDays() {
+  const from = document.getElementById("t_datefrom").value;
+  const to = document.getElementById("t_dateto").value;
+  if (from && to) {
+    const d1 = new Date(from), d2 = new Date(to);
+    const diffDays = Math.max(1, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1);
+    document.getElementById("t_days").value = diffDays;
+  }
 }
 
 let destRowCount = 0;
@@ -398,20 +486,61 @@ function resetDestinations() {
   addDestinationRow();
 }
 
+function addFoodRow(containerId) {
+  const el = document.getElementById(containerId);
+  const row = document.createElement("div");
+  row.className = "grid2";
+  row.innerHTML = `<input type="text" class="food-input" placeholder="e.g. Dim sum" /><button type="button" class="small secondary" onclick="this.parentElement.remove()">✕</button>`;
+  el.appendChild(row);
+}
+function resetFoodLists() {
+  document.getElementById("foodWantList").innerHTML = "";
+  document.getElementById("foodAvoidList").innerHTML = "";
+  addFoodRow("foodWantList");
+  addFoodRow("foodAvoidList");
+}
+
+function addCustomerCostRow() {
+  const el = document.getElementById("customerCostList");
+  const row = document.createElement("div");
+  row.className = "grid2";
+  row.innerHTML = `<input type="text" class="cc-label" placeholder="e.g. Transport" /><input type="number" class="cc-amount" placeholder="Amount (IDR)" />`;
+  el.appendChild(row);
+}
+function resetCustomerCostList() {
+  document.getElementById("customerCostList").innerHTML = "";
+  addCustomerCostRow();
+}
+
+async function loadTourSheetDropdowns() {
+  await loadCRMDropdown("t_client", ["id_buyer", "cn_buyer"]);
+  await loadCRMDropdown("t_teamMember", ["team_member"], true);
+  const banks = await NEXUS.get("/api/bank-accounts");
+  document.getElementById("t_bankAccount").innerHTML = banks.length
+    ? banks.map(b => `<option value="${b.id}">${b.bank_name} — ${b.account_number}</option>`).join("")
+    : '<option value="">No bank accounts saved — add one in Invoice Settings</option>';
+}
+
 async function submitTour() {
   const tour_category = document.getElementById("t_category").value;
-  const client_name = document.getElementById("t_client").value.trim();
+  const clientSel = document.getElementById("t_client");
+  const client_name = clientSel.options[clientSel.selectedIndex] ? clientSel.options[clientSel.selectedIndex].text : "";
   const date_from = document.getElementById("t_datefrom").value;
   const date_to = document.getElementById("t_dateto").value;
   const days = document.getElementById("t_days").value;
   const destInputs = Array.from(document.querySelectorAll("#destList .dest-input")).map(i => i.value.trim()).filter(Boolean);
   const destinations = destInputs.map((d, i) => `${i + 1}. ${d}`).join("\n");
+  const wantInputs = Array.from(document.querySelectorAll("#foodWantList .food-input")).map(i => i.value.trim()).filter(Boolean);
+  const food_wanted = wantInputs.map((d, i) => `${i + 1}. ${d}`).join("\n");
+  const avoidInputs = Array.from(document.querySelectorAll("#foodAvoidList .food-input")).map(i => i.value.trim()).filter(Boolean);
+  const food_avoid = avoidInputs.map((d, i) => `${i + 1}. ${d}`).join("\n");
   const pax_adults = document.getElementById("t_adults").value;
   const pax_children = document.getElementById("t_children").value;
   const pax_infants = document.getElementById("t_infants").value;
   const pax_elderly = document.getElementById("t_elderly").value;
   const cost = document.getElementById("t_cost").value;
-  const status = document.getElementById("t_status").value;
+  const bank_account_id = document.getElementById("t_bankAccount").value || null;
+  const team_member_id = document.getElementById("t_teamMember").value || null;
 
   let tier_name = "", price_per_unit = 0, pax_or_days = 0, amount_client_pays = 0;
   if (tour_category === "only_booking") {
@@ -424,18 +553,50 @@ async function submitTour() {
     pax_or_days = document.getElementById("t_qty").value;
   }
 
-  await NEXUS.post("/api/business/tours", {
-    tour_category, tier_name, pax_or_days, price_per_unit, cost, status,
+  const res = await NEXUS.post("/api/business/tours", {
+    tour_category, tier_name, pax_or_days, price_per_unit, cost, status: "open",
     client_name, date_from, date_to, days, destinations,
     pax_adults, pax_children, pax_infants, pax_elderly, amount_client_pays,
+    food_wanted, food_avoid, bank_account_id, team_member_id,
   });
+
+  const costRows = Array.from(document.querySelectorAll("#customerCostList > div")).map(row => ({
+    label: row.querySelector(".cc-label").value.trim(),
+    amount: row.querySelector(".cc-amount").value,
+  })).filter(r => r.label);
+  for (const r of costRows) {
+    await NEXUS.post(`/api/business/tours/${res.id}/cost-items`, r);
+  }
+
   NEXUS.closeSheet("tourSheet");
-  ["t_client","t_datefrom","t_dateto","t_days","t_qty","t_cost","t_adults","t_children","t_infants","t_elderly","t_clientpays"].forEach(id => document.getElementById(id).value = "");
+  ["t_datefrom","t_dateto","t_days","t_qty","t_cost","t_adults","t_children","t_infants","t_elderly","t_clientpays"].forEach(id => document.getElementById(id).value = "");
   resetDestinations();
+  resetFoodLists();
+  resetCustomerCostList();
   loadTours();
 }
 
 async function completeTour(id) { await NEXUS.put(`/api/business/tours/${id}/complete`, {}); loadTours(); }
+async function updateTourStatus(id, val) { await NEXUS.put(`/api/business/tours/${id}/status`, { tour_status: val }); loadTours(); }
+
+async function openFeedback(tourId) {
+  const form = await NEXUS.get(`/api/business/tours/${tourId}/feedback-form`);
+  document.getElementById("fb_tourId").value = tourId;
+  document.getElementById("fb_questions").innerHTML = form.questions.map((q, i) => `
+    <label>${q}</label>
+    <textarea class="fb-answer" data-q="${i}" rows="2"></textarea>
+  `).join("");
+  NEXUS.openSheet("feedbackSheet");
+}
+
+async function submitFeedback() {
+  const tourId = document.getElementById("fb_tourId").value;
+  const answers = {};
+  document.querySelectorAll(".fb-answer").forEach(t => { answers[t.dataset.q] = t.value; });
+  await NEXUS.post(`/api/business/tours/${tourId}/feedback`, { answers });
+  NEXUS.closeSheet("feedbackSheet");
+  alert("Feedback saved. Thank you!");
+}
 
 document.getElementById("o_flags").addEventListener("change", suggestFee);
 async function suggestFee() {
@@ -543,13 +704,14 @@ async function seedCatalog() {
 }
 
 const TRACKB_PIPELINE = [
-  { key: "confirmed_both", label: "Already Confirm Both Buyer & Supplier" },
-  { key: "partial_paid", label: "Already Pay (Parts)" },
-  { key: "packed", label: "Already Pack" },
-  { key: "id_port", label: "Already In Indonesia Port" },
-  { key: "cn_port", label: "Already In China Port" },
-  { key: "arrived_buyer", label: "Already Arrived To China Buyer" },
-  { key: "closing", label: "Closing" },
+  { key: "just_order", label: "Just Order" },
+  { key: "half_paid", label: "Already Pay Half" },
+  { key: "packed", label: "Already Packed" },
+  { key: "id_port", label: "Already Arrive In Indonesia Port" },
+  { key: "sent_out", label: "Already Sent Out" },
+  { key: "cn_port", label: "Already Arrive In China Port" },
+  { key: "buyer_warehouse", label: "Already Arrive In Buyer's Warehouse" },
+  { key: "finished", label: "Finished" },
 ];
 function trackbPipelineIndex(key) { return Math.max(0, TRACKB_PIPELINE.findIndex(p => p.key === key)); }
 
@@ -558,6 +720,7 @@ async function loadTrackBProductDropdown() {
   const sel = document.getElementById("b_product");
   if (!catalog.length) { sel.innerHTML = '<option value="">No catalog products — add one in the catalog section first</option>'; return; }
   sel.innerHTML = catalog.map(p => `<option value="${p.id}">${p.name} (${p.category})</option>`).join("");
+  await loadCRMDropdown("b_buyer", ["cn_buyer"]);
 }
 
 async function loadTrackBOrders() {
@@ -567,7 +730,7 @@ async function loadTrackBOrders() {
   const el = document.getElementById("trackbOrdersList");
   if (!orders.length) { el.innerHTML = '<div class="empty">No orders yet</div>'; return; }
   el.innerHTML = orders.map(o => {
-    const stIdx = trackbPipelineIndex(o.pipeline_status || "confirmed_both");
+    const stIdx = trackbPipelineIndex(o.pipeline_status || "just_order");
     return `
     <div class="order-card">
       <div class="order-head">
@@ -595,7 +758,8 @@ function toggleProfitModel() {
 }
 
 async function submitTrackB() {
-  const buyer_name = document.getElementById("b_buyer").value.trim();
+  const buyerSel = document.getElementById("b_buyer");
+  const buyer_name = buyerSel.options[buyerSel.selectedIndex] ? buyerSel.options[buyerSel.selectedIndex].text : "";
   const catalog_product_id = document.getElementById("b_product").value;
   const profit_model = document.getElementById("b_model").value;
   const cost_price = document.getElementById("b_cost").value;
@@ -672,11 +836,27 @@ async function loadCRM() {
   `).join("");
 }
 
+let certRowCount = 0;
+function addCertRow() {
+  certRowCount++;
+  const el = document.getElementById("c_certList");
+  const row = document.createElement("div");
+  row.className = "grid2";
+  row.innerHTML = `<input type="text" class="cert-input" placeholder="Certificate ${certRowCount}" /><button type="button" class="small secondary" onclick="this.parentElement.remove()">✕</button>`;
+  el.appendChild(row);
+}
+function resetCertRows() {
+  document.getElementById("c_certList").innerHTML = "";
+  certRowCount = 0;
+  addCertRow();
+}
+
 async function submitCRM() {
   const kind = document.getElementById("c_kind").value;
   const company_name = document.getElementById("c_company").value.trim();
   const person_name = document.getElementById("c_person").value.trim();
   if (!company_name && !person_name) { alert("Enter a company or person name."); return; }
+  const certificates = Array.from(document.querySelectorAll("#c_certList .cert-input")).map(i => i.value.trim()).filter(Boolean);
   await NEXUS.post("/api/crm", {
     kind, company_name, person_name,
     whatsapp: document.getElementById("c_whatsapp").value,
@@ -685,9 +865,14 @@ async function submitCRM() {
     address: document.getElementById("c_address").value,
     alibaba_link: document.getElementById("c_alibaba").value,
     tier: document.getElementById("c_tier").value,
+    bank_name: document.getElementById("c_bankname").value,
+    bank_account_name: document.getElementById("c_bankaccname").value,
+    bank_account_number: document.getElementById("c_bankaccnum").value,
+    certificates,
   });
   NEXUS.closeSheet("crmSheet");
-  ["c_company","c_person","c_whatsapp","c_wechat","c_phone","c_address","c_alibaba"].forEach(id => document.getElementById(id).value = "");
+  ["c_company","c_person","c_whatsapp","c_wechat","c_phone","c_address","c_alibaba","c_bankname","c_bankaccname","c_bankaccnum"].forEach(id => document.getElementById(id).value = "");
+  resetCertRows();
   loadCRM();
 }
 

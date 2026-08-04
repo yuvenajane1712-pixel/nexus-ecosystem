@@ -81,13 +81,14 @@ module.exports = function (io) {
 
   // 12-stage Track B pipeline (per spec)
   const TRACKB_PIPELINE = [
-    { key: "confirmed_both", label: "Already Confirm Both Buyer & Supplier" },
-    { key: "partial_paid", label: "Already Pay (Parts)" },
-    { key: "packed", label: "Already Pack" },
-    { key: "id_port", label: "Already In Indonesia Port" },
-    { key: "cn_port", label: "Already In China Port" },
-    { key: "arrived_buyer", label: "Already Arrived To China Buyer" },
-    { key: "closing", label: "Closing" },
+    { key: "just_order", label: "Just Order" },
+    { key: "half_paid", label: "Already Pay Half" },
+    { key: "packed", label: "Already Packed" },
+    { key: "id_port", label: "Already Arrive In Indonesia Port" },
+    { key: "sent_out", label: "Already Sent Out" },
+    { key: "cn_port", label: "Already Arrive In China Port" },
+    { key: "buyer_warehouse", label: "Already Arrive In Buyer's Warehouse" },
+    { key: "finished", label: "Finished" },
   ];
   router.get("/pipeline-stages", (req, res) => res.json(TRACKB_PIPELINE));
 
@@ -163,7 +164,7 @@ module.exports = function (io) {
         freight, freight_currency, insurance, insurance_currency,
         vat, vat_currency, misc_fees, misc_currency,
         payment_method, status, pipeline_status, fx_rate, invoice_number
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'confirmed_both',?,?)
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'just_order',?,?)
     `).run(
       buyer_name, product_summary, catalog_product_id || null, profit_model, fee_rate || 0,
       cost_price || 0, cost_currency || "RMB", selling_price || 0, selling_currency || "RMB",
@@ -188,16 +189,16 @@ module.exports = function (io) {
     const { pipeline_status } = req.body;
     const order = db.prepare("SELECT * FROM track_b_orders WHERE id=?").get(req.params.id);
     if (!order) return res.status(404).json({ error: "not found" });
-    const wasClosing = order.pipeline_status === "closing";
+    const wasFinished = order.pipeline_status === "finished";
 
-    if (pipeline_status === "full_payment" && order.pipeline_status !== "full_payment") {
+    if (pipeline_status === "half_paid" && order.pipeline_status !== "half_paid") {
       db.prepare("UPDATE track_b_orders SET payment_date=date('now') WHERE id=?").run(req.params.id);
     }
 
     db.prepare("UPDATE track_b_orders SET pipeline_status=? WHERE id=?").run(pipeline_status, req.params.id);
     const totals = recomputeTrackB(req.params.id);
 
-    if (pipeline_status === "closing" && !wasClosing) {
+    if (pipeline_status === "finished" && !wasFinished) {
       db.prepare("UPDATE track_b_orders SET status='completed' WHERE id=?").run(req.params.id);
       db.prepare("INSERT INTO transactions (kind, category, amount_rmb, source, note) VALUES (?,?,?,?,?)")
         .run("income", "Nadylan Trade Profit", totals.profit, "business", `Track B Order #${order.invoice_number || order.id} (${order.buyer_name})`);

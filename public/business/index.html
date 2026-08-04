@@ -47,12 +47,15 @@
         <h3>🏦 Invoice Settings</h3>
         <label>Company name</label>
         <input id="bank_company" placeholder="Nadylan" onchange="updateBankSetting('company_name', this.value)" />
-        <label>Bank name</label>
-        <input id="bank_name" placeholder="e.g. Bank BCA" onchange="updateBankSetting('bank_name', this.value)" />
-        <label>Account name</label>
-        <input id="bank_account_name" placeholder="Account holder name" onchange="updateBankSetting('bank_account_name', this.value)" />
-        <label>Account number</label>
-        <input id="bank_account_number" placeholder="Account number" onchange="updateBankSetting('bank_account_number', this.value)" />
+        <div class="section-title" style="margin-top:12px;">Saved Bank Accounts</div>
+        <div id="bankAccountsList"><div class="empty">No bank accounts saved yet</div></div>
+        <label style="margin-top:8px;">Bank name</label>
+        <input id="new_bank_name" placeholder="e.g. Bank BCA" />
+        <div class="grid2">
+          <input id="new_bank_accname" placeholder="Account name" />
+          <input id="new_bank_accnum" placeholder="Account number" />
+        </div>
+        <button class="small secondary" onclick="submitBankAccount()">+ Add Bank Account</button>
       </div>
 
       <div class="section-title">Product Catalog (name once, price per variant)</div>
@@ -124,6 +127,7 @@
         <button class="small secondary" onclick="filterCRM('cn_supplier')">CN Suppliers</button>
       </div>
       <button class="small secondary" style="margin-bottom:10px;" onclick="filterCRM('cn_buyer')">CN Buyers</button>
+      <button class="small secondary" style="margin-bottom:10px;" onclick="filterCRM('team_member')">Our Team</button>
       <div id="crmList"><div class="empty">No contacts yet</div></div>
     </section>
 
@@ -203,8 +207,8 @@
     <div class="sheet">
       <div class="close" onclick="NEXUS.closeSheet('orderSheet')">Close ✕</div>
       <h2>New Order (Track A)</h2>
-      <label>Buyer name</label>
-      <input id="o_buyer" placeholder="e.g. PT Sumber Jaya" />
+      <label>Buyer (from Contact Info)</label>
+      <select id="o_buyer"></select>
       <label>Client type (for fee suggestion)</label>
       <select id="o_flags">
         <option value="firsttime">First-time client</option>
@@ -226,6 +230,10 @@
       </div>
       <label>Urgency (1 low – 5 very urgent)</label>
       <input id="o_urgency" type="number" min="1" max="5" value="1" />
+      <label>Receiving bank account</label>
+      <select id="o_bankAccount"></select>
+      <label>Team member contact (shown on invoice)</label>
+      <select id="o_teamMember"></select>
       <button onclick="submitOrder()">Create Order — then add products</button>
     </div>
   </div>
@@ -321,8 +329,8 @@
     <div class="sheet">
       <div class="close" onclick="NEXUS.closeSheet('tourSheet')">Close ✕</div>
       <h2>New Tour</h2>
-      <label>Client name</label>
-      <input id="t_client" placeholder="e.g. Mr. Wang" />
+      <label>Client (from Contact Info)</label>
+      <select id="t_client"></select>
       <label>Service type</label>
       <select id="t_category" onchange="toggleTourCategory()">
         <option value="only_booking">Only Booking (5% fee)</option>
@@ -332,15 +340,23 @@
       </select>
 
       <div class="grid2">
-        <div><label>Travel date from</label><input id="t_datefrom" type="date" /></div>
-        <div><label>Travel date until</label><input id="t_dateto" type="date" /></div>
+        <div><label>Travel date from</label><input id="t_datefrom" type="date" onchange="autoCalcDays()" /></div>
+        <div><label>Travel date until</label><input id="t_dateto" type="date" onchange="autoCalcDays()" /></div>
       </div>
-      <label>How many days</label>
+      <label>How many days (auto-filled from dates, editable)</label>
       <input id="t_days" type="number" placeholder="5" />
 
       <label>Where they want to go (list)</label>
       <div id="destList"></div>
       <button class="small secondary" type="button" onclick="addDestinationRow()">+ Add destination</button>
+
+      <label style="margin-top:10px;">What they want to eat (list)</label>
+      <div id="foodWantList"></div>
+      <button class="small secondary" type="button" onclick="addFoodRow('foodWantList')">+ Add</button>
+
+      <label style="margin-top:10px;">What they cannot eat (list)</label>
+      <div id="foodAvoidList"></div>
+      <button class="small secondary" type="button" onclick="addFoodRow('foodAvoidList')">+ Add</button>
 
       <div class="grid2" style="margin-top:10px;">
         <div><label>Adults</label><input id="t_adults" type="number" value="0" /></div>
@@ -370,14 +386,31 @@
         <input id="t_clientpays" type="number" placeholder="e.g. 5000000" />
       </div>
 
-      <label>Total cost to us (IDR)</label>
-      <input id="t_cost" type="number" placeholder="0" />
-      <label>Status</label>
-      <select id="t_status">
-        <option value="open">Open</option>
-        <option value="completed">Completed (posts margin to Budget)</option>
-      </select>
+      <label style="margin-top:10px;">Total cost for customer (itemized list)</label>
+      <div id="customerCostList"></div>
+      <button class="small secondary" type="button" onclick="addCustomerCostRow()">+ Add cost item (e.g. Transport, Food)</button>
+
+      <div id="t_ourCostField">
+        <label style="margin-top:10px;">Total our cost — only for Big Bus / Private (charter car, bus, food)</label>
+        <input id="t_cost" type="number" placeholder="0" />
+      </div>
+
+      <label style="margin-top:10px;">Receiving bank account</label>
+      <select id="t_bankAccount"></select>
+      <label>Team member contact (shown on invoice)</label>
+      <select id="t_teamMember"></select>
+
       <button onclick="submitTour()">Save Tour</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="feedbackSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('feedbackSheet')">Close ✕</div>
+      <h2>Trip Feedback Questionnaire</h2>
+      <input type="hidden" id="fb_tourId" />
+      <div id="fb_questions"></div>
+      <button onclick="submitFeedback()">Save Feedback</button>
     </div>
   </div>
 
@@ -385,8 +418,8 @@
     <div class="sheet">
       <div class="close" onclick="NEXUS.closeSheet('trackbSheet')">Close ✕</div>
       <h2>New Track B Order</h2>
-      <label>Chinese buyer name</label>
-      <input id="b_buyer" placeholder="e.g. Guangzhou Coffee Co" />
+      <label>Chinese buyer (from Contact Info)</label>
+      <select id="b_buyer"></select>
       <label>Product (from catalog)</label>
       <select id="b_product"></select>
       <label>Profit model</label>
@@ -451,6 +484,7 @@
         <option value="id_buyer">Indonesian Buyer</option>
         <option value="cn_supplier">Chinese Supplier</option>
         <option value="cn_buyer">Chinese Buyer</option>
+        <option value="team_member">Our Team Member</option>
       </select>
       <label>Company name</label>
       <input id="c_company" placeholder="e.g. CV Kopi Aceh" />
@@ -466,6 +500,15 @@
       </div>
       <label>Address</label>
       <input id="c_address" placeholder="Full address" />
+      <label>Certificates / licenses held (add each one)</label>
+      <div id="c_certList"></div>
+      <button class="small secondary" type="button" onclick="addCertRow()">+ Add certificate</button>
+      <label style="margin-top:10px;">Bank name</label>
+      <input id="c_bankname" placeholder="e.g. Bank BCA" />
+      <div class="grid2">
+        <div><label>Bank account name</label><input id="c_bankaccname" placeholder="Account holder" /></div>
+        <div><label>Bank account number</label><input id="c_bankaccnum" placeholder="Account number" /></div>
+      </div>
       <label>Tier</label>
       <select id="c_tier">
         <option value="big_fish_client">Big Fish Client</option>
