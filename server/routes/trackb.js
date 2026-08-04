@@ -33,6 +33,14 @@ module.exports = function (io) {
 
   router.get("/certificates", (req, res) => res.json(CERTIFICATE_GUIDE));
 
+  // comparison table — all products in a category side by side (grade/process/variety etc.)
+  router.get("/catalog/compare", (req, res) => {
+    const products = db.prepare("SELECT * FROM catalog_products ORDER BY category, name").all();
+    const byCategory = {};
+    products.forEach((p) => { (byCategory[p.category] = byCategory[p.category] || []).push(p); });
+    res.json(byCategory);
+  });
+
   router.get("/catalog", (req, res) => {
     const { category } = req.query;
     let sql = "SELECT * FROM catalog_products WHERE 1=1";
@@ -145,7 +153,8 @@ module.exports = function (io) {
       buyer_name, catalog_product_id, profit_model, fee_rate,
       cost_price, cost_currency, selling_price, selling_currency,
       freight, freight_currency, insurance, insurance_currency,
-      vat, vat_currency, misc_fees, misc_currency, payment_method, status
+      vat, vat_currency, misc_fees, misc_currency, payment_method, status,
+      price_per_kg_idr, price_per_kg_rmb, bank_account_id, team_member_id,
     } = req.body;
 
     let product_summary = "";
@@ -163,14 +172,16 @@ module.exports = function (io) {
         cost_price, cost_currency, selling_price, selling_currency,
         freight, freight_currency, insurance, insurance_currency,
         vat, vat_currency, misc_fees, misc_currency,
-        payment_method, status, pipeline_status, fx_rate, invoice_number
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'just_order',?,?)
+        payment_method, status, pipeline_status, fx_rate, invoice_number,
+        price_per_kg_idr, price_per_kg_rmb, bank_account_id, team_member_id
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'just_order',?,?,?,?,?,?)
     `).run(
       buyer_name, product_summary, catalog_product_id || null, profit_model, fee_rate || 0,
       cost_price || 0, cost_currency || "RMB", selling_price || 0, selling_currency || "RMB",
       freight || 0, freight_currency || "RMB", insurance || 0, insurance_currency || "RMB",
       vat || 0, vat_currency || "RMB", misc_fees || 0, misc_currency || "RMB",
-      payment_method || "", status || "open", getFxRate(), invoiceNumber
+      payment_method || "", status || "open", getFxRate(), invoiceNumber,
+      price_per_kg_idr || null, price_per_kg_rmb || null, bank_account_id || null, team_member_id || null
     );
 
     const totals = recomputeTrackB(info.lastInsertRowid);

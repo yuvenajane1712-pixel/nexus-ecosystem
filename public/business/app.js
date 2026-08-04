@@ -51,8 +51,8 @@ document.getElementById("fabBtn").addEventListener("click", () => {
   }
   if (activeTab === "social") { alert("Use the Generate Script form above, or Auto-fill calendar."); return; }
   const target = sheetMap[activeTab];
-  if (target === "tourSheet") { resetDestinations(); resetFoodLists(); resetCustomerCostList(); toggleTourCategory(); loadTourSheetDropdowns(); }
-  if (target === "crmSheet") resetCertRows();
+  if (target === "tourSheet") { resetDestinations(); resetFoodLists(); resetCustomerCostList(); resetOurCostList(); toggleTourCategory(); loadTourSheetDropdowns(); }
+  if (target === "crmSheet") clearCRMForm();
   if (target === "orderSheet") loadOrderSheetDropdowns();
   if (target) NEXUS.openSheet(target);
 });
@@ -400,7 +400,8 @@ async function loadTours() {
         ${t.destinations ? `<div class="meta" style="white-space:pre-line; margin:6px 0;">📍 ${t.destinations}</div>` : ''}
         ${t.food_wanted ? `<div class="meta" style="white-space:pre-line;">🍽 Wants: ${t.food_wanted}</div>` : ''}
         ${t.food_avoid ? `<div class="meta" style="white-space:pre-line;">🚫 Avoid: ${t.food_avoid}</div>` : ''}
-        ${costItems.length ? `<div class="section-title" style="margin:8px 0 4px;">Customer Cost Items</div>` + costItems.map(c => `<div class="row"><span class="label">${c.label}</span><span class="val">${NEXUS.fmtMoney(c.amount,'IDR')}</span></div>`).join("") : ''}
+        ${costItems.filter(c=>!c.is_ours).length ? `<div class="section-title" style="margin:8px 0 4px;">Customer Cost Items (IDR)</div>` + costItems.filter(c=>!c.is_ours).map(c => `<div class="row"><span class="label">${c.label}</span><span class="val">${NEXUS.fmtMoney(c.amount,'IDR')}</span></div>`).join("") : ''}
+        ${costItems.filter(c=>c.is_ours).length ? `<div class="section-title" style="margin:8px 0 4px;">Our Cost Items (RMB)</div>` + costItems.filter(c=>c.is_ours).map(c => `<div class="row"><span class="label">${c.label}</span><span class="val">${NEXUS.fmtMoney(c.amount)}</span></div>`).join("") : ''}
         <div class="row" style="margin-top:6px;"><span class="label">Revenue (client pays)</span><span class="val">${NEXUS.fmtMoney(t.revenue,'IDR')}</span></div>
         ${t.tour_category === 'bigbus' || t.tour_category === 'private' ? `<div class="row"><span class="label">Our cost</span><span class="val">${NEXUS.fmtMoney(t.cost,'IDR')}</span></div>` : ''}
         <div class="row"><span class="label">Booking fee (5%)</span><span class="val">${NEXUS.fmtMoney(t.booking_fee,'IDR')}</span></div>
@@ -457,8 +458,10 @@ async function submitOrder() {
 function toggleTourCategory() {
   const cat = document.getElementById("t_category").value;
   document.getElementById("t_tierFields").classList.toggle("hidden", cat === "only_booking" || cat === "custom_itinerary");
-  document.getElementById("t_bookingFields").classList.toggle("hidden", cat !== "only_booking");
   document.getElementById("t_ourCostField").classList.toggle("hidden", cat === "only_booking" || cat === "custom_itinerary");
+  document.getElementById("customerCostHint").textContent = cat === "only_booking"
+    ? "List every booking they want — your 5% fee auto-calculates from this total."
+    : "Informational breakdown of what's included for the customer (not deducted from your profit).";
 }
 
 function autoCalcDays() {
@@ -512,6 +515,18 @@ function resetCustomerCostList() {
   addCustomerCostRow();
 }
 
+function addOurCostRow() {
+  const el = document.getElementById("ourCostList");
+  const row = document.createElement("div");
+  row.className = "grid2";
+  row.innerHTML = `<input type="text" class="oc-label" placeholder="e.g. Charter bus" /><input type="number" class="oc-amount" placeholder="Amount (RMB)" />`;
+  el.appendChild(row);
+}
+function resetOurCostList() {
+  document.getElementById("ourCostList").innerHTML = "";
+  addOurCostRow();
+}
+
 async function loadTourSheetDropdowns() {
   await loadCRMDropdown("t_client", ["id_buyer", "cn_buyer"]);
   await loadCRMDropdown("t_teamMember", ["team_member"], true);
@@ -538,45 +553,74 @@ async function submitTour() {
   const pax_children = document.getElementById("t_children").value;
   const pax_infants = document.getElementById("t_infants").value;
   const pax_elderly = document.getElementById("t_elderly").value;
-  const cost = document.getElementById("t_cost").value;
   const bank_account_id = document.getElementById("t_bankAccount").value || null;
   const team_member_id = document.getElementById("t_teamMember").value || null;
+  const invoice_lang = document.getElementById("t_invoiceLang").value;
 
-  let tier_name = "", price_per_unit = 0, pax_or_days = 0, amount_client_pays = 0;
+  let tier_name = "", price_per_unit = 0;
   if (tour_category === "only_booking") {
-    amount_client_pays = document.getElementById("t_clientpays").value;
     tier_name = "Booking Assistance";
   } else if (tour_category === "custom_itinerary") {
     tier_name = "Custom Itinerary";
   } else {
     [tier_name, price_per_unit] = document.getElementById("t_tier").value.split("|");
-    pax_or_days = document.getElementById("t_qty").value;
   }
 
   const res = await NEXUS.post("/api/business/tours", {
-    tour_category, tier_name, pax_or_days, price_per_unit, cost, status: "open",
+    tour_category, tier_name, price_per_unit, status: "open",
     client_name, date_from, date_to, days, destinations,
-    pax_adults, pax_children, pax_infants, pax_elderly, amount_client_pays,
-    food_wanted, food_avoid, bank_account_id, team_member_id,
+    pax_adults, pax_children, pax_infants, pax_elderly,
+    food_wanted, food_avoid, bank_account_id, team_member_id, invoice_lang,
   });
 
-  const costRows = Array.from(document.querySelectorAll("#customerCostList > div")).map(row => ({
+  const customerRows = Array.from(document.querySelectorAll("#customerCostList > div")).map(row => ({
     label: row.querySelector(".cc-label").value.trim(),
     amount: row.querySelector(".cc-amount").value,
+    is_ours: false,
   })).filter(r => r.label);
-  for (const r of costRows) {
+  const ourRows = Array.from(document.querySelectorAll("#ourCostList > div")).map(row => ({
+    label: row.querySelector(".oc-label").value.trim(),
+    amount: row.querySelector(".oc-amount").value,
+    is_ours: true,
+  })).filter(r => r.label);
+  for (const r of [...customerRows, ...ourRows]) {
     await NEXUS.post(`/api/business/tours/${res.id}/cost-items`, r);
   }
 
   NEXUS.closeSheet("tourSheet");
-  ["t_datefrom","t_dateto","t_days","t_qty","t_cost","t_adults","t_children","t_infants","t_elderly","t_clientpays"].forEach(id => document.getElementById(id).value = "");
+  ["t_datefrom","t_dateto","t_days","t_adults","t_children","t_infants","t_elderly"].forEach(id => document.getElementById(id).value = "");
   resetDestinations();
   resetFoodLists();
   resetCustomerCostList();
+  resetOurCostList();
   loadTours();
 }
 
 async function completeTour(id) { await NEXUS.put(`/api/business/tours/${id}/complete`, {}); loadTours(); }
+
+async function updateTourStatus(id, val) {
+  await NEXUS.put(`/api/business/tours/${id}/status`, { tour_status: val });
+  loadTours();
+}
+
+async function openFeedback(tourId) {
+  const form = await NEXUS.get(`/api/business/tours/${tourId}/feedback-form`);
+  document.getElementById("fb_tourId").value = tourId;
+  document.getElementById("fb_questions").innerHTML = form.questions.map((q, i) => `
+    <label>${i + 1}. ${q}</label>
+    <textarea class="fb-answer" rows="2" data-q="${q}"></textarea>
+  `).join("");
+  NEXUS.openSheet("feedbackSheet");
+}
+
+async function submitFeedback() {
+  const tourId = document.getElementById("fb_tourId").value;
+  const answers = {};
+  document.querySelectorAll("#fb_questions .fb-answer").forEach(t => { answers[t.dataset.q] = t.value; });
+  await NEXUS.post(`/api/business/tours/${tourId}/feedback`, { answers });
+  NEXUS.closeSheet("feedbackSheet");
+  alert("Feedback saved. Thank you!");
+}
 async function updateTourStatus(id, val) { await NEXUS.put(`/api/business/tours/${id}/status`, { tour_status: val }); loadTours(); }
 
 async function openFeedback(tourId) {
@@ -822,6 +866,7 @@ async function loadCRM() {
       ${c.whatsapp ? `<div class="meta">WA: ${c.whatsapp}</div>` : ''}
       ${c.wechat ? `<div class="meta">WeChat: ${c.wechat}</div>` : ''}
       ${c.phone ? `<div class="meta">Phone: ${c.phone}</div>` : ''}
+      ${c.email ? `<div class="meta">Email: ${c.email}</div>` : ''}
       ${c.address ? `<div class="meta">${c.address}</div>` : ''}
       ${c.alibaba_link ? `<div class="meta"><a href="${c.alibaba_link}" target="_blank">Alibaba link</a></div>` : ''}
       ${c.tier ? `<div class="meta">Tier: ${TIER_LABELS[c.tier] || c.tier}</div>` : ''}
@@ -830,8 +875,9 @@ async function loadCRM() {
       </div>
       <div class="grid2" style="margin-top:8px;">
         <button class="small secondary" onclick="openCertSheet(${c.id})">+ Add certificate</button>
-        <button class="small secondary" onclick="deleteCRM(${c.id})">🗑 Delete contact</button>
+        <button class="small secondary" onclick="editCRM(${c.id})">✏️ Edit</button>
       </div>
+      <button class="small secondary" style="margin-top:6px;" onclick="deleteCRM(${c.id})">🗑 Delete contact</button>
     </div>
   `).join("");
 }
@@ -851,28 +897,65 @@ function resetCertRows() {
   addCertRow();
 }
 
+function clearCRMForm() {
+  document.getElementById("c_editId").value = "";
+  document.getElementById("crmSheetTitle").textContent = "New Contact";
+  document.getElementById("crmSubmitBtn").textContent = "Save Contact";
+  ["c_company","c_person","c_whatsapp","c_wechat","c_phone","c_email","c_address","c_alibaba","c_bankname","c_bankaccname","c_bankaccnum"].forEach(id => document.getElementById(id).value = "");
+  resetCertRows();
+}
+
+async function editCRM(id) {
+  const list = await NEXUS.get("/api/crm");
+  const c = list.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById("c_editId").value = id;
+  document.getElementById("crmSheetTitle").textContent = "Edit Contact";
+  document.getElementById("crmSubmitBtn").textContent = "Save Changes";
+  document.getElementById("c_kind").value = c.kind;
+  document.getElementById("c_company").value = c.company_name || "";
+  document.getElementById("c_person").value = c.person_name || "";
+  document.getElementById("c_whatsapp").value = c.whatsapp || "";
+  document.getElementById("c_wechat").value = c.wechat || "";
+  document.getElementById("c_phone").value = c.phone || "";
+  document.getElementById("c_email").value = c.email || "";
+  document.getElementById("c_address").value = c.address || "";
+  document.getElementById("c_alibaba").value = c.alibaba_link || "";
+  document.getElementById("c_tier").value = c.tier || "";
+  document.getElementById("c_bankname").value = c.bank_name || "";
+  document.getElementById("c_bankaccname").value = c.bank_account_name || "";
+  document.getElementById("c_bankaccnum").value = c.bank_account_number || "";
+  resetCertRows();
+  NEXUS.openSheet("crmSheet");
+}
+
 async function submitCRM() {
+  const editId = document.getElementById("c_editId").value;
   const kind = document.getElementById("c_kind").value;
   const company_name = document.getElementById("c_company").value.trim();
   const person_name = document.getElementById("c_person").value.trim();
   if (!company_name && !person_name) { alert("Enter a company or person name."); return; }
   const certificates = Array.from(document.querySelectorAll("#c_certList .cert-input")).map(i => i.value.trim()).filter(Boolean);
-  await NEXUS.post("/api/crm", {
+  const payload = {
     kind, company_name, person_name,
     whatsapp: document.getElementById("c_whatsapp").value,
     wechat: document.getElementById("c_wechat").value,
     phone: document.getElementById("c_phone").value,
+    email: document.getElementById("c_email").value,
     address: document.getElementById("c_address").value,
     alibaba_link: document.getElementById("c_alibaba").value,
     tier: document.getElementById("c_tier").value,
     bank_name: document.getElementById("c_bankname").value,
     bank_account_name: document.getElementById("c_bankaccname").value,
     bank_account_number: document.getElementById("c_bankaccnum").value,
-    certificates,
-  });
+  };
+  if (editId) {
+    await NEXUS.put(`/api/crm/${editId}`, payload);
+  } else {
+    await NEXUS.post("/api/crm", { ...payload, certificates });
+  }
   NEXUS.closeSheet("crmSheet");
-  ["c_company","c_person","c_whatsapp","c_wechat","c_phone","c_address","c_alibaba","c_bankname","c_bankaccname","c_bankaccnum"].forEach(id => document.getElementById(id).value = "");
-  resetCertRows();
+  clearCRMForm();
   loadCRM();
 }
 

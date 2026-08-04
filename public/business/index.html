@@ -374,28 +374,29 @@
           <option value="High School Graduate Tour|17000000">High School Graduate — 17M IDR/pax</option>
           <option value="Corporate Business Tour|20000000">Corporate Business — 20M IDR/pax</option>
           <option value="High Season Tour|25000000">High Season — 25M IDR/pax</option>
-          <option value="Leisure Private Tour|800000">Leisure Private — 800K IDR/day</option>
-          <option value="Business Concierge Private Tour|1500000">Business Concierge — 1.5M IDR/day</option>
+          <option value="Leisure Private Tour|800000">Leisure Private — 800K IDR/day (doubles per +4 pax)</option>
+          <option value="Business Concierge Private Tour|1500000">Business Concierge — 1.5M IDR/day (doubles per +4 pax)</option>
         </select>
-        <label id="t_qtyLabel">Pax count</label>
-        <input id="t_qty" type="number" placeholder="30" />
+        <div class="meta">Big Bus revenue = total pax × tier price. Private tour revenue = tier price × days, doubled for every group of 4 people beyond the first 4. Pax counts come from the Adults/Children/Infants/Elderly fields above.</div>
       </div>
 
-      <div id="t_bookingFields" class="hidden">
-        <label>Amount client wants booked (IDR)</label>
-        <input id="t_clientpays" type="number" placeholder="e.g. 5000000" />
-      </div>
-
-      <label style="margin-top:10px;">Total cost for customer (itemized list)</label>
+      <label style="margin-top:10px;" id="customerCostLabel">Total cost for customer (itemized list)</label>
+      <div class="meta" id="customerCostHint">For Booking Only: list every booking they want — your 5% fee auto-calculates from this total.</div>
       <div id="customerCostList"></div>
       <button class="small secondary" type="button" onclick="addCustomerCostRow()">+ Add cost item (e.g. Transport, Food)</button>
 
       <div id="t_ourCostField">
-        <label style="margin-top:10px;">Total our cost — only for Big Bus / Private (charter car, bus, food)</label>
-        <input id="t_cost" type="number" placeholder="0" />
+        <label style="margin-top:10px;">Our cost — Big Bus / Private only (charter car, bus, food, paid in RMB)</label>
+        <div id="ourCostList"></div>
+        <button class="small secondary" type="button" onclick="addOurCostRow()">+ Add our cost item (RMB)</button>
       </div>
 
-      <label style="margin-top:10px;">Receiving bank account</label>
+      <label style="margin-top:10px;">Invoice language</label>
+      <select id="t_invoiceLang">
+        <option value="en">English</option>
+        <option value="id">Indonesian</option>
+      </select>
+      <label>Receiving bank account</label>
       <select id="t_bankAccount"></select>
       <label>Team member contact (shown on invoice)</label>
       <select id="t_teamMember"></select>
@@ -477,7 +478,8 @@
   <div class="sheet-overlay" id="crmSheet">
     <div class="sheet">
       <div class="close" onclick="NEXUS.closeSheet('crmSheet')">Close ✕</div>
-      <h2>New Contact</h2>
+      <h2 id="crmSheetTitle">New Contact</h2>
+      <input type="hidden" id="c_editId" />
       <label>Type</label>
       <select id="c_kind">
         <option value="id_supplier">Indonesian Supplier</option>
@@ -498,6 +500,8 @@
         <div><label>Phone</label><input id="c_phone" placeholder="021-..." /></div>
         <div><label>Alibaba link</label><input id="c_alibaba" placeholder="https://..." /></div>
       </div>
+      <label>Email</label>
+      <input id="c_email" type="email" placeholder="name@example.com" />
       <label>Address</label>
       <input id="c_address" placeholder="Full address" />
       <label>Certificates / licenses held (add each one)</label>
@@ -517,8 +521,9 @@
         <option value="alibaba_trusted_supplier">Alibaba Trusted Supplier</option>
         <option value="mature_supplier">Mature Supplier</option>
         <option value="newbie_supplier">Newbie Supplier</option>
+        <option value="team_member">Team Member</option>
       </select>
-      <button onclick="submitCRM()">Save Contact</button>
+      <button id="crmSubmitBtn" onclick="submitCRM()">Save Contact</button>
     </div>
   </div>
 

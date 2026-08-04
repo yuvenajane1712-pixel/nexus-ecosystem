@@ -19,12 +19,12 @@ module.exports = function (io) {
   });
 
   router.post("/", (req, res) => {
-    const { kind, company_name, person_name, whatsapp, wechat, phone, address, alibaba_link, tier, bank_name, bank_account_name, bank_account_number, certificates } = req.body;
+    const { kind, company_name, person_name, whatsapp, wechat, phone, email, address, alibaba_link, tier, bank_name, bank_account_name, bank_account_number, certificates } = req.body;
     const displayName = company_name || person_name || "Unnamed";
     const info = db.prepare(`
-      INSERT INTO clients (kind, name, company_name, person_name, whatsapp, wechat, phone, address, alibaba_link, tier, bank_name, bank_account_name, bank_account_number)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-    `).run(kind, displayName, company_name || "", person_name || "", whatsapp || "", wechat || "", phone || "", address || "", alibaba_link || "", tier || "",
+      INSERT INTO clients (kind, name, company_name, person_name, whatsapp, wechat, phone, email, address, alibaba_link, tier, bank_name, bank_account_name, bank_account_number)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(kind, displayName, company_name || "", person_name || "", whatsapp || "", wechat || "", phone || "", email || "", address || "", alibaba_link || "", tier || "",
       bank_name || "", bank_account_name || "", bank_account_number || "");
     if (Array.isArray(certificates)) {
       const certStmt = db.prepare("INSERT INTO client_certificates (client_id, cert_name) VALUES (?,?)");
@@ -35,11 +35,13 @@ module.exports = function (io) {
   });
 
   router.put("/:id", (req, res) => {
-    const { company_name, person_name, whatsapp, wechat, phone, address, alibaba_link, tier, bank_name, bank_account_name, bank_account_number } = req.body;
+    const { kind, company_name, person_name, whatsapp, wechat, phone, email, address, alibaba_link, tier, bank_name, bank_account_name, bank_account_number } = req.body;
     const displayName = company_name || person_name || "Unnamed";
-    db.prepare(`
-      UPDATE clients SET name=?, company_name=?, person_name=?, whatsapp=?, wechat=?, phone=?, address=?, alibaba_link=?, tier=?, bank_name=?, bank_account_name=?, bank_account_number=? WHERE id=?
-    `).run(displayName, company_name, person_name, whatsapp, wechat, phone, address, alibaba_link, tier, bank_name || "", bank_account_name || "", bank_account_number || "", req.params.id);
+    const fields = ["name=?", "company_name=?", "person_name=?", "whatsapp=?", "wechat=?", "phone=?", "email=?", "address=?", "alibaba_link=?", "tier=?", "bank_name=?", "bank_account_name=?", "bank_account_number=?"];
+    const params = [displayName, company_name, person_name, whatsapp, wechat, phone, email || "", address, alibaba_link, tier, bank_name || "", bank_account_name || "", bank_account_number || ""];
+    if (kind !== undefined) { fields.push("kind=?"); params.push(kind); }
+    params.push(req.params.id);
+    db.prepare(`UPDATE clients SET ${fields.join(", ")} WHERE id=?`).run(...params);
     emit();
     res.json({ ok: true });
   });

@@ -449,6 +449,29 @@ try { db.exec("ALTER TABLE tours ADD COLUMN food_avoid TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE tours ADD COLUMN tour_status TEXT DEFAULT 'just_order'"); } catch (e) {}
 try { db.exec("ALTER TABLE tours ADD COLUMN feedback_json TEXT"); } catch (e) {}
 
+// Track A: richer product catalog (quality, photo, specs count, colors, supplier link, CBM logistics cost)
+try { db.exec("ALTER TABLE track_a_products ADD COLUMN quality TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE track_a_products ADD COLUMN photo_data TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE track_a_products ADD COLUMN specs_count INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE track_a_products ADD COLUMN colors TEXT DEFAULT '[]'"); } catch (e) {}
+try { db.exec("ALTER TABLE track_a_products ADD COLUMN supplier_id INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE track_a_products ADD COLUMN cost_per_cbm_intl REAL"); } catch (e) {}
+
+// Track B: per-kg pricing (IDR and RMB) as an alternative to total cost/selling price
+try { db.exec("ALTER TABLE track_b_orders ADD COLUMN price_per_kg_idr REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE track_b_orders ADD COLUMN price_per_kg_rmb REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE track_b_orders ADD COLUMN bank_account_id INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE track_b_orders ADD COLUMN team_member_id INTEGER"); } catch (e) {}
+
+// Guangzhou Mate: cost items need currency + ownership (customer-facing IDR vs our-cost RMB)
+try { db.exec("ALTER TABLE tour_cost_items ADD COLUMN currency TEXT DEFAULT 'IDR'"); } catch (e) {}
+try { db.exec("ALTER TABLE tour_cost_items ADD COLUMN is_ours INTEGER DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN invoice_lang TEXT DEFAULT 'en'"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN price_per_unit_cache REAL DEFAULT 0"); } catch (e) {}
+
+// Contact Info: email address
+try { db.exec("ALTER TABLE clients ADD COLUMN email TEXT"); } catch (e) {}
+
 // People: weight goal + target date, water target
 try { db.exec("ALTER TABLE people ADD COLUMN goal_weight_kg REAL"); } catch (e) {}
 try { db.exec("ALTER TABLE people ADD COLUMN goal_date TEXT"); } catch (e) {}

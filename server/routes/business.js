@@ -104,21 +104,31 @@ module.exports = function (io) {
   router.get("/products-catalog", (req, res) => {
     const products = db.prepare("SELECT * FROM track_a_products ORDER BY name").all();
     const variants = db.prepare("SELECT * FROM track_a_variants ORDER BY id").all();
-    products.forEach((p) => { p.variants = variants.filter((v) => v.product_id === p.id); });
+    const suppliers = db.prepare("SELECT id, company_name, person_name FROM clients").all();
+    products.forEach((p) => {
+      p.variants = variants.filter((v) => v.product_id === p.id);
+      const supplier = suppliers.find((s) => s.id === p.supplier_id);
+      p.supplier_name = supplier ? (supplier.company_name || supplier.person_name) : null;
+    });
     res.json(products);
   });
 
   router.post("/products-catalog", (req, res) => {
-    const { name, description } = req.body;
+    const { name, description, quality, photo_data, specs_count, colors, supplier_id, cost_per_cbm_intl } = req.body;
     if (!name) return res.status(400).json({ error: "name required" });
-    const info = db.prepare("INSERT INTO track_a_products (name, description) VALUES (?,?)").run(name, description || "");
+    const info = db.prepare(`
+      INSERT INTO track_a_products (name, description, quality, photo_data, specs_count, colors, supplier_id, cost_per_cbm_intl)
+      VALUES (?,?,?,?,?,?,?,?)
+    `).run(name, description || "", quality || "", photo_data || null, specs_count || null, JSON.stringify(colors || []), supplier_id || null, cost_per_cbm_intl || null);
     emit();
     res.json({ id: info.lastInsertRowid });
   });
 
   router.put("/products-catalog/:id", (req, res) => {
-    const { name, description } = req.body;
-    db.prepare("UPDATE track_a_products SET name=?, description=? WHERE id=?").run(name, description || "", req.params.id);
+    const { name, description, quality, photo_data, specs_count, colors, supplier_id, cost_per_cbm_intl } = req.body;
+    db.prepare(`
+      UPDATE track_a_products SET name=?, description=?, quality=?, photo_data=?, specs_count=?, colors=?, supplier_id=?, cost_per_cbm_intl=? WHERE id=?
+    `).run(name, description || "", quality || "", photo_data || null, specs_count || null, JSON.stringify(colors || []), supplier_id || null, cost_per_cbm_intl || null, req.params.id);
     emit();
     res.json({ ok: true });
   });
@@ -298,49 +308,77 @@ module.exports = function (io) {
   ];
   router.get("/tours/pipeline-stages", (req, res) => res.json(TOUR_PIPELINE));
 
-  // ---- itemized customer-facing cost list (Transport: X, Food: Y, ...) ----
+  // ---- itemized cost list: customer-facing (IDR) or our own cost (RMB) ----
   router.get("/tours/:id/cost-items", (req, res) => {
     res.json(db.prepare("SELECT * FROM tour_cost_items WHERE tour_id=? ORDER BY id").all(req.params.id));
   });
   router.post("/tours/:id/cost-items", (req, res) => {
-    const { label, amount } = req.body;
+    const { label, amount, is_ours } = req.body;
     if (!label) return res.status(400).json({ error: "label required" });
-    const info = db.prepare("INSERT INTO tour_cost_items (tour_id, label, amount) VALUES (?,?,?)").run(req.params.id, label, Number(amount) || 0);
+    const currency = is_ours ? "RMB" : "IDR";
+    const info = db.prepare("INSERT INTO tour_cost_items (tour_id, label, amount, currency, is_ours) VALUES (?,?,?,?,?)")
+      .run(req.params.id, label, Number(amount) || 0, currency, is_ours ? 1 : 0);
+    recomputeTour(req.params.id);
     emit();
     res.json({ id: info.lastInsertRowid });
   });
   router.delete("/tours/:id/cost-items/:itemId", (req, res) => {
+    const item = db.prepare("SELECT tour_id FROM tour_cost_items WHERE id=?").get(req.params.itemId);
     db.prepare("DELETE FROM tour_cost_items WHERE id=?").run(req.params.itemId);
+    if (item) recomputeTour(item.tour_id);
     emit();
     res.json({ ok: true });
   });
 
+  // recompute revenue/cost/margin for a tour based on its category and cost items
+  function recomputeTour(tourId) {
+    const t = db.prepare("SELECT * FROM tours WHERE id=?").get(tourId);
+    if (!t) return null;
+    const items = db.prepare("SELECT * FROM tour_cost_items WHERE tour_id=?").all(tourId);
+    const customerItemsTotal = items.filter((i) => !i.is_ours).reduce((s, i) => s + i.amount, 0); // IDR
+    const ourItemsTotalRmb = items.filter((i) => i.is_ours).reduce((s, i) => s + i.amount, 0); // RMB
+    const fx = getFxRate(); // IDR per RMB
+    const totalPax = (t.pax_adults || 0) + (t.pax_children || 0) + (t.pax_infants || 0) + (t.pax_elderly || 0);
+
+    let revenue = 0;
+    let bookingFee = 0;
+
+    if (t.tour_category === "only_booking") {
+      // list all the bookings they want (customer cost items), our fee = 5% of that total — this IS the revenue, no separate fee added
+      revenue = customerItemsTotal * 0.05;
+      bookingFee = revenue;
+    } else if (t.tour_category === "custom_itinerary") {
+      // days × 89,000 IDR — this IS the fee, nothing added on top
+      revenue = (t.days || 0) * 89000;
+    } else if (t.tour_category === "bigbus") {
+      // total people × tier price per pax
+      const paxCount = totalPax > 0 ? totalPax : (t.pax_or_days || 0);
+      revenue = paxCount * (t.price_per_unit_cache || 0);
+    } else if (t.tour_category === "private") {
+      // price per day, doubled for every full group of 4 people beyond the first 4
+      const paxCount = totalPax > 0 ? totalPax : 1;
+      const multiplier = Math.ceil(paxCount / 4);
+      revenue = (t.price_per_unit_cache || 0) * (t.days || t.pax_or_days || 1) * multiplier;
+    }
+
+    const ourCostIdr = ourItemsTotalRmb * fx;
+    const legacyCost = t.cost || 0; // manual fallback if no itemized "our cost" entries exist
+    const totalCost = ourItemsTotalRmb > 0 ? ourCostIdr : legacyCost;
+    const margin = revenue - totalCost;
+
+    db.prepare("UPDATE tours SET revenue=?, cost=?, margin=?, booking_fee=?, pax_or_days=? WHERE id=?")
+      .run(revenue, totalCost, margin, bookingFee, totalPax || t.pax_or_days || 0, tourId);
+    return { revenue, cost: totalCost, margin, bookingFee };
+  }
+
   router.post("/tours", (req, res) => {
     const {
       tour_category, tier_name, pax_or_days, price_per_unit, cost, status,
-      client_name, date_from, date_to, days, destinations, pax_adults, pax_children, pax_infants, pax_elderly, amount_client_pays,
-      food_wanted, food_avoid, bank_account_id, team_member_id,
+      client_name, date_from, date_to, days, destinations, pax_adults, pax_children, pax_infants, pax_elderly,
+      food_wanted, food_avoid, bank_account_id, team_member_id, invoice_lang,
     } = req.body;
 
     const category = tour_category || "bigbus";
-    const c = Number(cost) || 0;
-    let revenue = 0;
-
-    if (category === "only_booking") {
-      // pure booking help — 5% fee on the amount the client wants booked
-      revenue = Number(amount_client_pays) || 0;
-    } else if (category === "custom_itinerary") {
-      // 89,000 IDR per day
-      revenue = (Number(days) || 0) * 89000;
-    } else {
-      // bigbus / private — pax/day × tier price, or explicit amount_client_pays overrides
-      const computedRevenue = (Number(pax_or_days) || 0) * (Number(price_per_unit) || 0);
-      revenue = amount_client_pays ? Number(amount_client_pays) : computedRevenue;
-    }
-
-    const bookingFee = revenue * 0.05;
-    const margin = revenue - c;
-
     const PREFIX = { only_booking: "Booking", custom_itinerary: "Itinerary", bigbus: "BBT", private: "PT" };
     const existingInCategory = db.prepare("SELECT COUNT(*) c FROM tours WHERE tour_category=?").get(category).c;
     const invoiceNumber = `${PREFIX[category] || "Tour"}${existingInCategory + 1}`;
@@ -348,29 +386,30 @@ module.exports = function (io) {
     const info = db.prepare(`
       INSERT INTO tours (
         tour_type, tier_name, pax_or_days, revenue, cost, margin, booking_fee, status,
-        client_name, travel_date, pax_adults, pax_children, pax_infants, pax_elderly, amount_client_pays,
+        client_name, travel_date, pax_adults, pax_children, pax_infants, pax_elderly,
         tour_category, date_from, date_to, days, destinations, invoice_number,
-        food_wanted, food_avoid, tour_status, bank_account_id, team_member_id
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'just_order',?,?)
+        food_wanted, food_avoid, tour_status, bank_account_id, team_member_id, invoice_lang, price_per_unit_cache
+      ) VALUES (?,?,?,0,0,0,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'just_order',?,?,?,?)
     `).run(
-      category, tier_name || "", pax_or_days || 0, revenue, c, margin, bookingFee, status || "open",
-      client_name || "", date_from || "", pax_adults || 0, pax_children || 0, pax_infants || 0, pax_elderly || 0, Number(amount_client_pays) || 0,
+      category, tier_name || "", pax_or_days || 0, status || "open",
+      client_name || "", date_from || "", pax_adults || 0, pax_children || 0, pax_infants || 0, pax_elderly || 0,
       category, date_from || "", date_to || "", days || 0, destinations || "", invoiceNumber,
-      food_wanted || "", food_avoid || "", bank_account_id || null, team_member_id || null
+      food_wanted || "", food_avoid || "", bank_account_id || null, team_member_id || null, invoice_lang || "en", Number(price_per_unit) || 0
     );
 
+    const totals = recomputeTour(info.lastInsertRowid);
     emit();
 
     if ((status || "open") === "completed") {
       db.prepare("UPDATE tours SET payment_date=date('now') WHERE id=?").run(info.lastInsertRowid);
       const fx = getFxRate(); // IDR per RMB
-      const marginRmb = margin / fx;
+      const marginRmb = totals.margin / fx;
       db.prepare("INSERT INTO transactions (kind, category, amount_rmb, source, note) VALUES (?,?,?,?,?)")
-        .run("income", "Guangzhou Mate Tour Revenue", marginRmb, "business", `Tour #${invoiceNumber} - ${margin.toLocaleString()} IDR @ ${fx}`);
+        .run("income", "Guangzhou Mate Tour Revenue", marginRmb, "business", `Tour #${invoiceNumber} - ${totals.margin.toLocaleString()} IDR @ ${fx}`);
       emitBudget();
     }
 
-    res.json({ id: info.lastInsertRowid, revenue, margin, booking_fee: bookingFee, invoice_number: invoiceNumber });
+    res.json({ id: info.lastInsertRowid, revenue: totals.revenue, margin: totals.margin, booking_fee: totals.bookingFee, invoice_number: invoiceNumber });
   });
 
   // ---- tour status pipeline (drives the auto-generated feedback questionnaire on "already_done") ----

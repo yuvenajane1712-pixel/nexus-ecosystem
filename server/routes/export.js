@@ -415,41 +415,55 @@ module.exports = function () {
   router.get("/trackb/orders/:id/docx-zh", async (req, res) => {
     const o = db.prepare("SELECT * FROM track_b_orders WHERE id=?").get(req.params.id);
     if (!o) return res.status(404).send("Order not found");
-
-    const modelLabel = { margin: "利润差价模式", fee: "佣金模式", both: "差价+佣金模式" }[o.profit_model] || o.profit_model;
+    const cfg = {};
+    db.prepare("SELECT key, value FROM config").all().forEach((r) => (cfg[r.key] = r.value));
+    const bankAccount = o.bank_account_id ? db.prepare("SELECT * FROM bank_accounts WHERE id=?").get(o.bank_account_id) : null;
+    const teamMember = o.team_member_id ? db.prepare("SELECT * FROM clients WHERE id=?").get(o.team_member_id) : null;
+    const bank = bankAccount || { bank_name: cfg.bank_name, account_name: cfg.bank_account_name, account_number: cfg.bank_account_number };
 
     const row = (label, value) => new TableRow({ children: [
-      new TableCell({ width: { size: 40, type: WidthType.PERCENTAGE }, children: [new Paragraph({ children: [new TextRun({ text: label, bold: true })] })] }),
+      new TableCell({ width: { size: 40, type: WidthType.PERCENTAGE }, shading: { fill: "F4F6F6" }, children: [new Paragraph({ children: [new TextRun({ text: label, bold: true })] })] }),
       new TableCell({ width: { size: 60, type: WidthType.PERCENTAGE }, children: [new Paragraph(String(value ?? "-"))] }),
     ]});
+
+    const rows = [
+      row("价格/kg (印尼盾 IDR)", o.price_per_kg_idr ?? "-"),
+      row("价格/kg (人民币 RMB)", o.price_per_kg_rmb ?? "-"),
+      row("运费", o.freight),
+      row("保险费", o.insurance),
+      row("增值税", o.vat),
+      row("其他费用", o.misc_fees),
+      row("付款方式", o.payment_method || "-"),
+      row("状态", o.pipeline_status || "-"),
+    ];
 
     const doc = new Document({
       sections: [{
         children: [
-          new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: `订单确认书 #${o.id}`, bold: true })] }),
-          new Paragraph({ text: `买方: ${o.buyer_name}`, spacing: { after: 200 } }),
-          new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [
-            row("产品说明", o.product_summary),
-            row("定价模式", modelLabel),
-            row("成本价 (RMB)", o.cost_price),
-            row("销售价 (RMB)", o.selling_price),
-            row("运费", o.freight),
-            row("保险费", o.insurance),
-            row("增值税", o.vat),
-            row("其他费用", o.misc_fees),
-            row("佣金比例 (%)", o.fee_rate),
-            row("利润 (RMB)", o.profit?.toFixed(2)),
-            row("利润率 (%)", o.margin_pct ? o.margin_pct.toFixed(2) : "-"),
-            row("付款方式", o.payment_method),
-            row("状态", o.pipeline_status),
-          ]}),
+          new Paragraph({ children: [new TextRun({ text: "NEXUS - NADYLAN", bold: true, size: 32, color: "1F3864" })] }),
+          new Paragraph({ children: [new TextRun({ text: "供货发票 (Sourcing Invoice)", size: 22, color: "0F6E6E" })], spacing: { after: 200 } }),
+          new Paragraph({ children: [new TextRun({ text: `订单号 Order #${o.invoice_number || o.id}`, bold: true })] }),
+          new Paragraph({ text: `日期 Date: ${o.created_at ? o.created_at.slice(0, 10) : "-"}    付款日期 Payment date: ${o.payment_date || "-"}`, spacing: { after: 200 } }),
+          new Paragraph({ children: [new TextRun({ text: "买方 BILL TO", bold: true, color: "666666", size: 18 })] }),
+          new Paragraph({ children: [new TextRun({ text: o.buyer_name, bold: true, size: 24 })], spacing: { after: 200 } }),
+          new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows }),
+          new Paragraph({ text: "", spacing: { after: 200 } }),
+          new Paragraph({ children: [new TextRun({ text: "银行转账信息 Bank Transfer Information", bold: true, color: "0F6E6E" })] }),
+          new Paragraph({ text: `银行 Bank: ${bank.bank_name || "-"}` }),
+          new Paragraph({ text: `账户名 Account name: ${bank.account_name || "-"}` }),
+          new Paragraph({ text: `账号 Account number: ${bank.account_number || "-"}` }),
+          new Paragraph({ text: `备注 Memo: Order #${o.invoice_number || o.id}`, spacing: { after: 200 } }),
+          ...(teamMember ? [
+            new Paragraph({ children: [new TextRun({ text: "联系我们的团队 Contact our team", bold: true, color: "666666", size: 18 })] }),
+            new Paragraph({ text: `${teamMember.person_name || teamMember.company_name}${teamMember.whatsapp ? "  WA: " + teamMember.whatsapp : ""}${teamMember.wechat ? "  WeChat: " + teamMember.wechat : ""}` }),
+          ] : []),
         ],
       }],
     });
 
     const buf = await Packer.toBuffer(doc);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-    res.setHeader("Content-Disposition", `attachment; filename=order-${o.id}-zh.docx`);
+    res.setHeader("Content-Disposition", `attachment; filename=order-${o.invoice_number || o.id}-zh.docx`);
     res.send(buf);
   });
 
