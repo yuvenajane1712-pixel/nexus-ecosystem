@@ -20,8 +20,18 @@ function toggleWorkoutOther() {
   document.getElementById("w_otherField").classList.toggle("hidden", document.getElementById("w_type").value !== "Other");
 }
 
-async function tapBathroom(kind) {
-  await NEXUS.post("/api/health/bathroom", { person_name: currentPersonName, kind });
+const PEE_COLOR_LABELS = { clear: "⚪ Clear", pale_yellow: "🟡 Pale Yellow", dark_yellow: "🟠 Dark Yellow", amber: "🟤 Amber", brown_red: "🔴 Brown/Red" };
+const STOOL_TYPE_LABELS = { hard_lumps: "① Hard lumps", lumpy: "② Lumpy", normal: "③④ Normal", soft_blobs: "⑤ Soft blobs", loose: "⑥ Loose", diarrhea: "⑦ Diarrhea" };
+
+async function logPeeColor(color) {
+  await NEXUS.post("/api/health/bathroom", { person_name: currentPersonName, kind: "pee", pee_color: color });
+  NEXUS.closeSheet("peeColorSheet");
+  loadBathroom();
+}
+
+async function logStoolType(type) {
+  await NEXUS.post("/api/health/bathroom", { person_name: currentPersonName, kind: "poop", stool_type: type });
+  NEXUS.closeSheet("stoolTypeSheet");
   loadBathroom();
 }
 
@@ -29,9 +39,22 @@ async function loadBathroom() {
   const data = await NEXUS.get(`/api/health/bathroom/${encodeURIComponent(currentPersonName)}`);
   document.getElementById("peeCount").textContent = data.pee_count;
   document.getElementById("poopCount").textContent = data.poop_count;
-  document.getElementById("bathroomEvents").innerHTML = data.events.map(e =>
-    `${e.kind === 'pee' ? '💧' : '💩'} ${NEXUS.fmtDate(e.logged_at)}`
-  ).join(" · ") || "No events logged yet today";
+
+  const stoolEntries = Object.entries(data.stool_breakdown || {});
+  document.getElementById("stoolBreakdown").innerHTML = stoolEntries.length
+    ? "Stool chart today: " + stoolEntries.map(([type, count]) => `${STOOL_TYPE_LABELS[type] || type} ×${count}`).join(", ")
+    : "";
+
+  const peeEntries = Object.entries(data.pee_color_breakdown || {});
+  document.getElementById("peeColorBreakdown").innerHTML = peeEntries.length
+    ? "Pee color today: " + peeEntries.map(([color, count]) => `${PEE_COLOR_LABELS[color] || color} ×${count}`).join(", ")
+    : "";
+
+  document.getElementById("bathroomEvents").innerHTML = data.events.map(e => {
+    const detail = e.kind === "pee" ? (PEE_COLOR_LABELS[e.pee_color] || "") : (STOOL_TYPE_LABELS[e.stool_type] || "");
+    const time = e.logged_at.split(" ")[1] ? e.logged_at.split(" ")[1].slice(0, 5) : "";
+    return `${e.kind === 'pee' ? '💧' : '💩'} ${time} ${detail}`;
+  }).join(" · ") || "No events logged yet today";
 }
 
 async function previewShelfLife() {

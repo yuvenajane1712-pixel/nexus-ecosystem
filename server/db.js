@@ -358,6 +358,8 @@ CREATE TABLE IF NOT EXISTS bathroom_log (
 );
 `);
 try { db.exec("ALTER TABLE health_logs ADD COLUMN grocery_grams REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE bathroom_log ADD COLUMN stool_type TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE bathroom_log ADD COLUMN pee_color TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE grocery_prices ADD COLUMN total_weight_g REAL"); } catch (e) {}
 try { db.exec("ALTER TABLE grocery_prices ADD COLUMN total_price REAL"); } catch (e) {}
 

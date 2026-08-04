@@ -209,23 +209,52 @@ module.exports = function (io) {
     res.json({ bySlot, totals });
   });
 
-  // ---- bathroom quick-tap log (pee/poop) ----
+  // ---- bathroom quick-tap log (pee/poop) — with stool type (Bristol-style) and pee color tracking ----
   router.post("/bathroom", (req, res) => {
-    const { person_name, kind } = req.body;
-    const info = db.prepare("INSERT INTO bathroom_log (person_name, kind) VALUES (?,?)").run(person_name, kind);
+    const { person_name, kind, stool_type, pee_color } = req.body;
+    const info = db.prepare("INSERT INTO bathroom_log (person_name, kind, stool_type, pee_color) VALUES (?,?,?,?)")
+      .run(person_name, kind, stool_type || null, pee_color || null);
     emit();
     res.json({ id: info.lastInsertRowid });
   });
 
   router.get("/bathroom/:person", (req, res) => {
+    const date = req.query.date || null;
+    const dateClause = date ? "date(logged_at)=?" : "date(logged_at)=date('now')";
+    const params = date ? [req.params.person, date] : [req.params.person];
     const rows = db.prepare(`
-      SELECT * FROM bathroom_log WHERE person_name=? AND date(logged_at)=date('now') ORDER BY logged_at ASC
-    `).all(req.params.person);
+      SELECT * FROM bathroom_log WHERE person_name=? AND ${dateClause} ORDER BY logged_at ASC
+    `).all(...params);
+
+    const poopEvents = rows.filter((r) => r.kind === "poop");
+    const peeEvents = rows.filter((r) => r.kind === "pee");
+
+    const stoolBreakdown = {};
+    poopEvents.forEach((r) => { const t = r.stool_type || "unspecified"; stoolBreakdown[t] = (stoolBreakdown[t] || 0) + 1; });
+    const peeColorBreakdown = {};
+    peeEvents.forEach((r) => { const c = r.pee_color || "unspecified"; peeColorBreakdown[c] = (peeColorBreakdown[c] || 0) + 1; });
+
     res.json({
-      pee_count: rows.filter((r) => r.kind === "pee").length,
-      poop_count: rows.filter((r) => r.kind === "poop").length,
+      pee_count: peeEvents.length,
+      poop_count: poopEvents.length,
       events: rows,
+      stool_breakdown: stoolBreakdown,
+      pee_color_breakdown: peeColorBreakdown,
     });
+  });
+
+  // 7-day history for the frequency/type chart
+  router.get("/bathroom/:person/history", (req, res) => {
+    const rows = db.prepare(`
+      SELECT * FROM bathroom_log WHERE person_name=? AND logged_at >= datetime('now','-7 days') ORDER BY logged_at ASC
+    `).all(req.params.person);
+    const byDay = {};
+    rows.forEach((r) => {
+      const day = r.logged_at.slice(0, 10);
+      if (!byDay[day]) byDay[day] = { pee: 0, poop: 0 };
+      byDay[day][r.kind] = (byDay[day][r.kind] || 0) + 1;
+    });
+    res.json({ by_day: byDay, events: rows });
   });
 
   router.delete("/bathroom/:id", (req, res) => {

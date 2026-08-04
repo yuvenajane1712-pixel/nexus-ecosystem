@@ -412,6 +412,52 @@ module.exports = function (io) {
     res.json({ id: info.lastInsertRowid, revenue: totals.revenue, margin: totals.margin, booking_fee: totals.bookingFee, invoice_number: invoiceNumber });
   });
 
+  // ---- edit an existing tour's details ----
+  router.put("/tours/:id", (req, res) => {
+    const tour = db.prepare("SELECT * FROM tours WHERE id=?").get(req.params.id);
+    if (!tour) return res.status(404).json({ error: "not found" });
+    const {
+      tier_name, cost, client_name, date_from, date_to, days, destinations,
+      pax_adults, pax_children, pax_infants, pax_elderly,
+      food_wanted, food_avoid, bank_account_id, team_member_id, invoice_lang, price_per_unit,
+    } = req.body;
+
+    const fields = [], params = [];
+    const set = (col, val) => { if (val !== undefined) { fields.push(`${col}=?`); params.push(val); } };
+    set("tier_name", tier_name);
+    set("cost", cost !== undefined ? Number(cost) || 0 : undefined);
+    set("client_name", client_name);
+    set("date_from", date_from); set("travel_date", date_from);
+    set("date_to", date_to);
+    set("days", days !== undefined ? Number(days) || 0 : undefined);
+    set("destinations", destinations);
+    set("pax_adults", pax_adults !== undefined ? Number(pax_adults) || 0 : undefined);
+    set("pax_children", pax_children !== undefined ? Number(pax_children) || 0 : undefined);
+    set("pax_infants", pax_infants !== undefined ? Number(pax_infants) || 0 : undefined);
+    set("pax_elderly", pax_elderly !== undefined ? Number(pax_elderly) || 0 : undefined);
+    set("food_wanted", food_wanted);
+    set("food_avoid", food_avoid);
+    set("bank_account_id", bank_account_id || null);
+    set("team_member_id", team_member_id || null);
+    set("invoice_lang", invoice_lang);
+    if (price_per_unit !== undefined) { fields.push("price_per_unit_cache=?"); params.push(Number(price_per_unit) || 0); }
+
+    if (fields.length) {
+      params.push(req.params.id);
+      db.prepare(`UPDATE tours SET ${fields.join(", ")} WHERE id=?`).run(...params);
+    }
+    const totals = recomputeTour(req.params.id);
+    emit();
+    res.json({ ok: true, ...totals });
+  });
+
+  router.delete("/tours/:id", (req, res) => {
+    db.prepare("DELETE FROM tour_cost_items WHERE tour_id=?").run(req.params.id);
+    db.prepare("DELETE FROM tours WHERE id=?").run(req.params.id);
+    emit();
+    res.json({ ok: true });
+  });
+
   // ---- tour status pipeline (drives the auto-generated feedback questionnaire on "already_done") ----
   router.put("/tours/:id/status", (req, res) => {
     const { tour_status } = req.body;

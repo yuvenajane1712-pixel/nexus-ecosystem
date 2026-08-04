@@ -52,10 +52,13 @@
 
     <div class="card">
       <h3>🚻 Bathroom Log Today</h3>
-      <div class="grid2">
-        <button class="secondary" onclick="tapBathroom('pee')">💧 Pee (<span id="peeCount">0</span>)</button>
-        <button class="secondary" onclick="tapBathroom('poop')">💩 Poop (<span id="poopCount">0</span>)</button>
+      <div class="row"><span class="label">Frequency</span><span class="val">💧 <span id="peeCount">0</span> pee · 💩 <span id="poopCount">0</span> poop</span></div>
+      <div class="grid2" style="margin-top:8px;">
+        <button class="secondary" onclick="NEXUS.openSheet('peeColorSheet')">💧 Log Pee</button>
+        <button class="secondary" onclick="NEXUS.openSheet('stoolTypeSheet')">💩 Log Poop</button>
       </div>
+      <div id="stoolBreakdown" class="meta" style="margin-top:8px;"></div>
+      <div id="peeColorBreakdown" class="meta"></div>
       <div id="bathroomEvents" class="meta" style="margin-top:8px;"></div>
     </div>
 
@@ -306,6 +309,33 @@
       <label>Foods this person doesn't eat (uncheck to exclude)</label>
       <div id="up_foodExclusions"></div>
       <button onclick="submitPersonUpdate()">Save</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="peeColorSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('peeColorSheet')">Close ✕</div>
+      <h2>💧 Log Pee — Color</h2>
+      <p class="meta">Pee color is a quick hydration signal — pale straw is well-hydrated, darker means drink more water.</p>
+      <button class="action-option" onclick="logPeeColor('clear')">⚪ Clear / Colorless (over-hydrated)</button>
+      <button class="action-option" onclick="logPeeColor('pale_yellow')">🟡 Pale Yellow (well-hydrated) ✅</button>
+      <button class="action-option" onclick="logPeeColor('dark_yellow')">🟠 Dark Yellow (drink more water)</button>
+      <button class="action-option" onclick="logPeeColor('amber')">🟤 Amber / Honey (dehydrated)</button>
+      <button class="action-option" onclick="logPeeColor('brown_red')">🔴 Brown or Reddish (check with a doctor)</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="stoolTypeSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('stoolTypeSheet')">Close ✕</div>
+      <h2>💩 Log Poop — Stool Type</h2>
+      <p class="meta">Based on the Bristol Stool Chart — helps track digestive health over time.</p>
+      <button class="action-option" onclick="logStoolType('hard_lumps')">① Hard lumps (constipation)</button>
+      <button class="action-option" onclick="logStoolType('lumpy')">② Lumpy sausage shape</button>
+      <button class="action-option" onclick="logStoolType('normal')">③④ Normal — smooth, sausage or snake-like ✅</button>
+      <button class="action-option" onclick="logStoolType('soft_blobs')">⑤ Soft blobs, clear edges</button>
+      <button class="action-option" onclick="logStoolType('loose')">⑥ Loose, mushy pieces</button>
+      <button class="action-option" onclick="logStoolType('diarrhea')">⑦ Watery, no solid pieces (diarrhea)</button>
     </div>
   </div>
 

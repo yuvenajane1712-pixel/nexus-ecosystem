@@ -344,9 +344,12 @@
   <div class="sheet-overlay" id="tourSheet">
     <div class="sheet">
       <div class="close" onclick="NEXUS.closeSheet('tourSheet')">Close ✕</div>
-      <h2>New Tour</h2>
+      <h2 id="tourSheetTitle">New Tour</h2>
+      <input type="hidden" id="t_editId" />
       <label>Client (from Contact Info)</label>
       <select id="t_client"></select>
+      <label class="meta">Editing an existing tour? Client name shown here (edit if needed):</label>
+      <input id="t_clientNameDirect" placeholder="Client name" />
       <label>Service type</label>
       <select id="t_category" onchange="toggleTourCategory()">
         <option value="only_booking">Only Booking (5% fee)</option>
@@ -417,7 +420,7 @@
       <label>Team member contact (shown on invoice)</label>
       <select id="t_teamMember"></select>
 
-      <button onclick="submitTour()">Save Tour</button>
+      <button id="tourSubmitBtn" onclick="submitTour()">Save Tour</button>
     </div>
   </div>
 

@@ -51,7 +51,13 @@ document.getElementById("fabBtn").addEventListener("click", () => {
   }
   if (activeTab === "social") { alert("Use the Generate Script form above, or Auto-fill calendar."); return; }
   const target = sheetMap[activeTab];
-  if (target === "tourSheet") { resetDestinations(); resetFoodLists(); resetCustomerCostList(); resetOurCostList(); toggleTourCategory(); loadTourSheetDropdowns(); }
+  if (target === "tourSheet") {
+    document.getElementById("t_editId").value = "";
+    document.getElementById("t_clientNameDirect").value = "";
+    document.getElementById("tourSheetTitle").textContent = "New Tour";
+    document.getElementById("tourSubmitBtn").textContent = "Save Tour";
+    resetDestinations(); resetFoodLists(); resetCustomerCostList(); resetOurCostList(); toggleTourCategory(); loadTourSheetDropdowns();
+  }
   if (target === "crmSheet") clearCRMForm();
   if (target === "orderSheet") loadOrderSheetDropdowns();
   if (target) NEXUS.openSheet(target);
@@ -439,8 +445,12 @@ async function loadTours() {
         ${t.destinations ? `<div class="meta" style="white-space:pre-line; margin:6px 0;">📍 ${t.destinations}</div>` : ''}
         ${t.food_wanted ? `<div class="meta" style="white-space:pre-line;">🍽 Wants: ${t.food_wanted}</div>` : ''}
         ${t.food_avoid ? `<div class="meta" style="white-space:pre-line;">🚫 Avoid: ${t.food_avoid}</div>` : ''}
-        ${costItems.filter(c=>!c.is_ours).length ? `<div class="section-title" style="margin:8px 0 4px;">Customer Cost Items (IDR)</div>` + costItems.filter(c=>!c.is_ours).map(c => `<div class="row"><span class="label">${c.label}</span><span class="val">${NEXUS.fmtMoney(c.amount,'IDR')}</span></div>`).join("") : ''}
-        ${costItems.filter(c=>c.is_ours).length ? `<div class="section-title" style="margin:8px 0 4px;">Our Cost Items (RMB)</div>` + costItems.filter(c=>c.is_ours).map(c => `<div class="row"><span class="label">${c.label}</span><span class="val">${NEXUS.fmtMoney(c.amount)}</span></div>`).join("") : ''}
+        ${costItems.filter(c=>!c.is_ours).length ? `<div class="section-title" style="margin:8px 0 4px;">Customer Cost Items (IDR)</div>` + costItems.filter(c=>!c.is_ours).map(c => `<div class="row"><span class="label">${c.label}</span><span class="val">${NEXUS.fmtMoney(c.amount,'IDR')} <a href="#" onclick="deleteTourCostItem(${t.id},${c.id});return false;">✕</a></span></div>`).join("") : ''}
+        ${costItems.filter(c=>c.is_ours).length ? `<div class="section-title" style="margin:8px 0 4px;">Our Cost Items (RMB)</div>` + costItems.filter(c=>c.is_ours).map(c => `<div class="row"><span class="label">${c.label}</span><span class="val">${NEXUS.fmtMoney(c.amount)} <a href="#" onclick="deleteTourCostItem(${t.id},${c.id});return false;">✕</a></span></div>`).join("") : ''}
+        <div class="grid2" style="margin-top:6px;">
+          <button class="small secondary" onclick="quickAddTourCostItem(${t.id}, false)">+ Customer cost</button>
+          <button class="small secondary" onclick="quickAddTourCostItem(${t.id}, true)">+ Our cost (RMB)</button>
+        </div>
         <div class="row" style="margin-top:6px;"><span class="label">Revenue (client pays)</span><span class="val">${NEXUS.fmtMoney(t.revenue,'IDR')}</span></div>
         ${t.tour_category === 'bigbus' || t.tour_category === 'private' ? `<div class="row"><span class="label">Our cost</span><span class="val">${NEXUS.fmtMoney(t.cost,'IDR')}</span></div>` : ''}
         <div class="row"><span class="label">Booking fee (5%)</span><span class="val">${NEXUS.fmtMoney(t.booking_fee,'IDR')}</span></div>
@@ -448,6 +458,10 @@ async function loadTours() {
         <a class="export-link" href="/api/export/tour/${t.id}/pdf" target="_blank">⬇ Export Invoice PDF</a><br>
         <a class="export-link" href="/api/export/tour/${t.id}/summary-pdf" target="_blank">⬇ Export Trip Summary PDF</a>
         ${t.tour_status === 'already_done' ? `<button class="small secondary" style="margin-top:8px;" onclick="openFeedback(${t.id})">📋 Feedback Questionnaire</button>` : ""}
+        <div class="grid2" style="margin-top:8px;">
+          <button class="small secondary" onclick="editTour(${t.id})">✏️ Edit</button>
+          <button class="small secondary" onclick="deleteTour(${t.id})">🗑 Delete</button>
+        </div>
       </div>
     `;
     }));
@@ -576,9 +590,11 @@ async function loadTourSheetDropdowns() {
 }
 
 async function submitTour() {
+  const editId = document.getElementById("t_editId").value;
   const tour_category = document.getElementById("t_category").value;
   const clientSel = document.getElementById("t_client");
-  const client_name = clientSel.options[clientSel.selectedIndex] ? clientSel.options[clientSel.selectedIndex].text : "";
+  const directName = document.getElementById("t_clientNameDirect").value.trim();
+  const client_name = directName || (clientSel.options[clientSel.selectedIndex] ? clientSel.options[clientSel.selectedIndex].text : "");
   const date_from = document.getElementById("t_datefrom").value;
   const date_to = document.getElementById("t_dateto").value;
   const days = document.getElementById("t_days").value;
@@ -605,28 +621,40 @@ async function submitTour() {
     [tier_name, price_per_unit] = document.getElementById("t_tier").value.split("|");
   }
 
-  const res = await NEXUS.post("/api/business/tours", {
-    tour_category, tier_name, price_per_unit, status: "open",
+  const payload = {
+    tour_category, tier_name, price_per_unit,
     client_name, date_from, date_to, days, destinations,
     pax_adults, pax_children, pax_infants, pax_elderly,
     food_wanted, food_avoid, bank_account_id, team_member_id, invoice_lang,
-  });
+  };
 
-  const customerRows = Array.from(document.querySelectorAll("#customerCostList > div")).map(row => ({
-    label: row.querySelector(".cc-label").value.trim(),
-    amount: row.querySelector(".cc-amount").value,
-    is_ours: false,
-  })).filter(r => r.label);
-  const ourRows = Array.from(document.querySelectorAll("#ourCostList > div")).map(row => ({
-    label: row.querySelector(".oc-label").value.trim(),
-    amount: row.querySelector(".oc-amount").value,
-    is_ours: true,
-  })).filter(r => r.label);
-  for (const r of [...customerRows, ...ourRows]) {
-    await NEXUS.post(`/api/business/tours/${res.id}/cost-items`, r);
+  let tourId = editId;
+  if (editId) {
+    await NEXUS.put(`/api/business/tours/${editId}`, payload);
+  } else {
+    const res = await NEXUS.post("/api/business/tours", { ...payload, status: "open" });
+    tourId = res.id;
+
+    const customerRows = Array.from(document.querySelectorAll("#customerCostList > div")).map(row => ({
+      label: row.querySelector(".cc-label").value.trim(),
+      amount: row.querySelector(".cc-amount").value,
+      is_ours: false,
+    })).filter(r => r.label);
+    const ourRows = Array.from(document.querySelectorAll("#ourCostList > div")).map(row => ({
+      label: row.querySelector(".oc-label").value.trim(),
+      amount: row.querySelector(".oc-amount").value,
+      is_ours: true,
+    })).filter(r => r.label);
+    for (const r of [...customerRows, ...ourRows]) {
+      await NEXUS.post(`/api/business/tours/${tourId}/cost-items`, r);
+    }
   }
 
   NEXUS.closeSheet("tourSheet");
+  document.getElementById("t_editId").value = "";
+  document.getElementById("t_clientNameDirect").value = "";
+  document.getElementById("tourSheetTitle").textContent = "New Tour";
+  document.getElementById("tourSubmitBtn").textContent = "Save Tour";
   ["t_datefrom","t_dateto","t_days","t_adults","t_children","t_infants","t_elderly"].forEach(id => document.getElementById(id).value = "");
   resetDestinations();
   resetFoodLists();
@@ -636,6 +664,85 @@ async function submitTour() {
 }
 
 async function completeTour(id) { await NEXUS.put(`/api/business/tours/${id}/complete`, {}); loadTours(); }
+
+async function quickAddTourCostItem(tourId, isOurs) {
+  const label = prompt(isOurs ? "Cost label (e.g. Charter bus):" : "Cost label (e.g. Transport):");
+  if (!label) return;
+  const amount = prompt(`Amount (${isOurs ? 'RMB' : 'IDR'}):`);
+  if (!amount) return;
+  await NEXUS.post(`/api/business/tours/${tourId}/cost-items`, { label, amount, is_ours: isOurs });
+  loadTours();
+}
+
+async function deleteTourCostItem(tourId, itemId) {
+  await NEXUS.del(`/api/business/tours/${tourId}/cost-items/${itemId}`);
+  loadTours();
+}
+
+async function deleteTour(id) {
+  if (!confirm("Delete this tour? This cannot be undone.")) return;
+  await NEXUS.del(`/api/business/tours/${id}`);
+  loadTours();
+}
+
+async function editTour(id) {
+  const tours = await NEXUS.get("/api/business/tours");
+  const t = tours.find(x => x.id === id);
+  if (!t) return;
+
+  await loadTourSheetDropdowns();
+  document.getElementById("t_editId").value = id;
+  document.getElementById("tourSheetTitle").textContent = "Edit Tour";
+  document.getElementById("tourSubmitBtn").textContent = "Save Changes";
+  document.getElementById("t_category").value = t.tour_category;
+  document.getElementById("t_client").value = ""; // free-text fallback, client name shown separately below
+  document.getElementById("t_clientNameDirect").value = t.client_name || "";
+  document.getElementById("t_datefrom").value = t.date_from || "";
+  document.getElementById("t_dateto").value = t.date_to || "";
+  document.getElementById("t_days").value = t.days || "";
+  document.getElementById("t_adults").value = t.pax_adults || 0;
+  document.getElementById("t_children").value = t.pax_children || 0;
+  document.getElementById("t_infants").value = t.pax_infants || 0;
+  document.getElementById("t_elderly").value = t.pax_elderly || 0;
+  document.getElementById("t_invoiceLang").value = t.invoice_lang || "en";
+  if (t.bank_account_id) document.getElementById("t_bankAccount").value = t.bank_account_id;
+  if (t.team_member_id) document.getElementById("t_teamMember").value = t.team_member_id;
+
+  document.getElementById("destList").innerHTML = "";
+  (t.destinations || "").split("\n").filter(Boolean).forEach(line => {
+    const text = line.replace(/^\d+\.\s*/, "");
+    const row = document.createElement("div");
+    row.className = "grid2";
+    row.innerHTML = `<input type="text" class="dest-input" value="${text}" /><button type="button" class="small secondary" onclick="this.parentElement.remove()">✕</button>`;
+    document.getElementById("destList").appendChild(row);
+  });
+  if (!document.getElementById("destList").children.length) addDestinationRow();
+
+  document.getElementById("foodWantList").innerHTML = "";
+  (t.food_wanted || "").split("\n").filter(Boolean).forEach(line => {
+    const text = line.replace(/^\d+\.\s*/, "");
+    const row = document.createElement("div");
+    row.className = "grid2";
+    row.innerHTML = `<input type="text" class="food-input" value="${text}" /><button type="button" class="small secondary" onclick="this.parentElement.remove()">✕</button>`;
+    document.getElementById("foodWantList").appendChild(row);
+  });
+  if (!document.getElementById("foodWantList").children.length) addFoodRow("foodWantList");
+
+  document.getElementById("foodAvoidList").innerHTML = "";
+  (t.food_avoid || "").split("\n").filter(Boolean).forEach(line => {
+    const text = line.replace(/^\d+\.\s*/, "");
+    const row = document.createElement("div");
+    row.className = "grid2";
+    row.innerHTML = `<input type="text" class="food-input" value="${text}" /><button type="button" class="small secondary" onclick="this.parentElement.remove()">✕</button>`;
+    document.getElementById("foodAvoidList").appendChild(row);
+  });
+  if (!document.getElementById("foodAvoidList").children.length) addFoodRow("foodAvoidList");
+
+  resetCustomerCostList();
+  resetOurCostList();
+  toggleTourCategory();
+  NEXUS.openSheet("tourSheet");
+}
 
 async function updateTourStatus(id, val) { await NEXUS.put(`/api/business/tours/${id}/status`, { tour_status: val }); loadTours(); }
 
