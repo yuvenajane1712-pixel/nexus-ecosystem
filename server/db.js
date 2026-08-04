@@ -396,6 +396,8 @@ try { db.exec("ALTER TABLE tours ADD COLUMN destinations TEXT"); } catch (e) {}
 
 // Health: per-person excluded foods (X out proteins/carbs they don't eat)
 try { db.exec("ALTER TABLE people ADD COLUMN excluded_foods TEXT DEFAULT '[]'"); } catch (e) {}
+try { db.exec("ALTER TABLE people ADD COLUMN goal_type TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE supplement_checklist ADD COLUMN taken_time TEXT"); } catch (e) {}
 
 // Nadylan Track A: markup/fee choice, invoice numbering, payment date, carrier tracking code
 try { db.exec("ALTER TABLE orders ADD COLUMN markup_mode TEXT DEFAULT 'fee'"); } catch (e) {}
@@ -456,6 +458,7 @@ try { db.exec("ALTER TABLE track_a_products ADD COLUMN specs_count INTEGER"); } 
 try { db.exec("ALTER TABLE track_a_products ADD COLUMN colors TEXT DEFAULT '[]'"); } catch (e) {}
 try { db.exec("ALTER TABLE track_a_products ADD COLUMN supplier_id INTEGER"); } catch (e) {}
 try { db.exec("ALTER TABLE track_a_products ADD COLUMN cost_per_cbm_intl REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE track_a_products ADD COLUMN markup_pct REAL DEFAULT 0"); } catch (e) {}
 
 // Track B: per-kg pricing (IDR and RMB) as an alternative to total cost/selling price
 try { db.exec("ALTER TABLE track_b_orders ADD COLUMN price_per_kg_idr REAL"); } catch (e) {}
@@ -491,6 +494,7 @@ CREATE TABLE IF NOT EXISTS supplement_checklist (
   supplement_id INTEGER,
   log_date TEXT,
   taken INTEGER DEFAULT 0,
+  taken_time TEXT,
   UNIQUE(supplement_id, log_date)
 );
 `);

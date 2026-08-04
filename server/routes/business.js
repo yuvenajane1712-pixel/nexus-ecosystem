@@ -114,21 +114,21 @@ module.exports = function (io) {
   });
 
   router.post("/products-catalog", (req, res) => {
-    const { name, description, quality, photo_data, specs_count, colors, supplier_id, cost_per_cbm_intl } = req.body;
+    const { name, description, quality, photo_data, specs_count, colors, supplier_id, cost_per_cbm_intl, markup_pct } = req.body;
     if (!name) return res.status(400).json({ error: "name required" });
     const info = db.prepare(`
-      INSERT INTO track_a_products (name, description, quality, photo_data, specs_count, colors, supplier_id, cost_per_cbm_intl)
-      VALUES (?,?,?,?,?,?,?,?)
-    `).run(name, description || "", quality || "", photo_data || null, specs_count || null, JSON.stringify(colors || []), supplier_id || null, cost_per_cbm_intl || null);
+      INSERT INTO track_a_products (name, description, quality, photo_data, specs_count, colors, supplier_id, cost_per_cbm_intl, markup_pct)
+      VALUES (?,?,?,?,?,?,?,?,?)
+    `).run(name, description || "", quality || "", photo_data || null, specs_count || null, JSON.stringify(colors || []), supplier_id || null, cost_per_cbm_intl || null, markup_pct || 0);
     emit();
     res.json({ id: info.lastInsertRowid });
   });
 
   router.put("/products-catalog/:id", (req, res) => {
-    const { name, description, quality, photo_data, specs_count, colors, supplier_id, cost_per_cbm_intl } = req.body;
+    const { name, description, quality, photo_data, specs_count, colors, supplier_id, cost_per_cbm_intl, markup_pct } = req.body;
     db.prepare(`
-      UPDATE track_a_products SET name=?, description=?, quality=?, photo_data=?, specs_count=?, colors=?, supplier_id=?, cost_per_cbm_intl=? WHERE id=?
-    `).run(name, description || "", quality || "", photo_data || null, specs_count || null, JSON.stringify(colors || []), supplier_id || null, cost_per_cbm_intl || null, req.params.id);
+      UPDATE track_a_products SET name=?, description=?, quality=?, photo_data=?, specs_count=?, colors=?, supplier_id=?, cost_per_cbm_intl=?, markup_pct=? WHERE id=?
+    `).run(name, description || "", quality || "", photo_data || null, specs_count || null, JSON.stringify(colors || []), supplier_id || null, cost_per_cbm_intl || null, markup_pct || 0, req.params.id);
     emit();
     res.json({ ok: true });
   });

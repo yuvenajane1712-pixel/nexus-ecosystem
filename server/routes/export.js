@@ -421,20 +421,23 @@ module.exports = function () {
     const teamMember = o.team_member_id ? db.prepare("SELECT * FROM clients WHERE id=?").get(o.team_member_id) : null;
     const bank = bankAccount || { bank_name: cfg.bank_name, account_name: cfg.bank_account_name, account_number: cfg.bank_account_number };
 
-    const row = (label, value) => new TableRow({ children: [
-      new TableCell({ width: { size: 40, type: WidthType.PERCENTAGE }, shading: { fill: "F4F6F6" }, children: [new Paragraph({ children: [new TextRun({ text: label, bold: true })] })] }),
-      new TableCell({ width: { size: 60, type: WidthType.PERCENTAGE }, children: [new Paragraph(String(value ?? "-"))] }),
-    ]});
+    const line = (label, value) => new Paragraph({
+      children: [
+        new TextRun({ text: `${label}: `, bold: true, color: "666666" }),
+        new TextRun({ text: String(value ?? "-") }),
+      ],
+      spacing: { after: 80 },
+    });
 
-    const rows = [
-      row("价格/kg (印尼盾 IDR)", o.price_per_kg_idr ?? "-"),
-      row("价格/kg (人民币 RMB)", o.price_per_kg_rmb ?? "-"),
-      row("运费", o.freight),
-      row("保险费", o.insurance),
-      row("增值税", o.vat),
-      row("其他费用", o.misc_fees),
-      row("付款方式", o.payment_method || "-"),
-      row("状态", o.pipeline_status || "-"),
+    const lines = [
+      line("价格/kg (印尼盾 IDR)", o.price_per_kg_idr ?? "-"),
+      line("价格/kg (人民币 RMB)", o.price_per_kg_rmb ?? "-"),
+      line("运费", o.freight),
+      line("保险费", o.insurance),
+      line("增值税", o.vat),
+      line("其他费用", o.misc_fees),
+      line("付款方式", o.payment_method || "-"),
+      line("状态", o.pipeline_status || "-"),
     ];
 
     const doc = new Document({
@@ -446,7 +449,7 @@ module.exports = function () {
           new Paragraph({ text: `日期 Date: ${o.created_at ? o.created_at.slice(0, 10) : "-"}    付款日期 Payment date: ${o.payment_date || "-"}`, spacing: { after: 200 } }),
           new Paragraph({ children: [new TextRun({ text: "买方 BILL TO", bold: true, color: "666666", size: 18 })] }),
           new Paragraph({ children: [new TextRun({ text: o.buyer_name, bold: true, size: 24 })], spacing: { after: 200 } }),
-          new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows }),
+          ...lines,
           new Paragraph({ text: "", spacing: { after: 200 } }),
           new Paragraph({ children: [new TextRun({ text: "银行转账信息 Bank Transfer Information", bold: true, color: "0F6E6E" })] }),
           new Paragraph({ text: `银行 Bank: ${bank.bank_name || "-"}` }),

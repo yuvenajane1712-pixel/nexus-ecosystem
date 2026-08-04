@@ -14,6 +14,7 @@ module.exports = function (io) {
     items.forEach((i) => {
       const c = checks.find((c) => c.supplement_id === i.id);
       i.taken_today = c ? !!c.taken : false;
+      i.taken_time = c ? c.taken_time : null;
     });
     res.json(items);
   });
@@ -35,12 +36,13 @@ module.exports = function (io) {
   });
 
   router.put("/:id/check", (req, res) => {
-    const { taken, date } = req.body;
+    const { taken, date, taken_time } = req.body;
     const logDate = date || new Date().toISOString().slice(0, 10);
+    const time = taken ? (taken_time || new Date().toTimeString().slice(0, 5)) : null;
     db.prepare(`
-      INSERT INTO supplement_checklist (supplement_id, log_date, taken) VALUES (?,?,?)
-      ON CONFLICT(supplement_id, log_date) DO UPDATE SET taken=excluded.taken
-    `).run(req.params.id, logDate, taken ? 1 : 0);
+      INSERT INTO supplement_checklist (supplement_id, log_date, taken, taken_time) VALUES (?,?,?,?)
+      ON CONFLICT(supplement_id, log_date) DO UPDATE SET taken=excluded.taken, taken_time=excluded.taken_time
+    `).run(req.params.id, logDate, taken ? 1 : 0, time);
     emit();
     res.json({ ok: true });
   });

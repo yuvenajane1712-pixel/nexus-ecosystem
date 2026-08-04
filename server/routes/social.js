@@ -30,6 +30,60 @@ function bestPostingTime(platform) {
 
 // script templates authored per language — structure is the same, wording is native to each language,
 // NOT a live translation call (no AI API wired in)
+// second-by-second shot list — segments the duration into beats, each with a camera angle,
+// what's happening on screen, and exact dialogue. Authored per language, not a live AI call.
+const SHOT_COPY = {
+  en: {
+    hook: (topic) => `"Wait — here's what nobody tells you about ${topic}."`,
+    context: (niche) => `Quick context: why this matters if you're into ${niche}.`,
+    detail1: (topic) => `Zoom into the specific detail of ${topic} — the part people skip.`,
+    demo: (topic) => `Walk through the main action step for ${topic}, narrating each move.`,
+    payoff: () => `"And that's the result — look at that."`,
+    cta: (topic) => `"Comment 'ME' if you're trying ${topic} too — I'll reply with tips."`,
+  },
+  zh: {
+    hook: (topic) => `"等一下——关于${topic}，很多人根本不知道这一点。"`,
+    context: (niche) => `快速交代背景：为什么这对关注${niche}的你很重要。`,
+    detail1: (topic) => `放大展示${topic}的关键细节——大部分人会跳过的部分。`,
+    demo: (topic) => `边讲解边演示${topic}的主要步骤。`,
+    payoff: () => `"看，这就是结果。"`,
+    cta: (topic) => `"如果你也想试试${topic}，评论"我"，我会回复具体做法。"`,
+  },
+  id: {
+    hook: (topic) => `"Tunggu — ini yang jarang orang tau soal ${topic}."`,
+    context: (niche) => `Konteks singkat: kenapa ini penting buat kamu yang suka ${niche}.`,
+    detail1: (topic) => `Zoom ke detail penting dari ${topic} — bagian yang sering dilewatin orang.`,
+    demo: (topic) => `Tunjukkin langkah utama ${topic} sambil dijelasin.`,
+    payoff: () => `"Nah, ini hasilnya — coba lihat."`,
+    cta: (topic) => `"Komen 'AKU' kalau kamu juga mau coba ${topic} — nanti aku bales tipsnya."`,
+  },
+};
+const ANGLE_LABELS = {
+  en: { close: "Close angle (face to camera)", wide: "Wide/far angle (establishing)", detail: "Detail/macro angle", medium: "Medium angle" },
+  zh: { close: "近景（面对镜头）", wide: "远景（建立场景）", detail: "特写（细节镜头）", medium: "中景" },
+  id: { close: "Sudut close-up (hadap kamera)", wide: "Sudut wide/jauh (establishing)", detail: "Sudut detail/macro", medium: "Sudut medium" },
+};
+
+function buildShotList(topic, niche, durationSec, language) {
+  const lang = SHOT_COPY[language] ? language : "en";
+  const copy = SHOT_COPY[lang];
+  const angles = ANGLE_LABELS[lang];
+  const d = durationSec || 30;
+
+  const mid1 = Math.round(d * 0.35);
+  const mid2 = Math.round(d * 0.65);
+  const end = d;
+
+  return [
+    { time: `0-3s`, angle: angles.close, action: lang === "zh" ? "开场钩子，正面对镜头说话" : lang === "id" ? "Hook pembuka, bicara langsung ke kamera" : "Opening hook, speak directly to camera", dialogue: copy.hook(topic) },
+    { time: `3-8s`, angle: angles.wide, action: lang === "zh" ? "展示场景/环境，建立背景" : lang === "id" ? "Tunjukkin suasana/tempat, kasih konteks" : "Show the setting/environment for context", dialogue: copy.context(niche) },
+    { time: `8-${mid1}s`, angle: angles.detail, action: lang === "zh" ? "特写关键细节" : lang === "id" ? "Detail penting di-zoom" : "Zoom into the key detail", dialogue: copy.detail1(topic) },
+    { time: `${mid1}-${mid2}s`, angle: angles.medium, action: lang === "zh" ? "主要演示/操作过程" : lang === "id" ? "Demo langkah utama" : "Main demonstration/action steps", dialogue: copy.demo(topic) },
+    { time: `${mid2}-${end - 3}s`, angle: angles.close, action: lang === "zh" ? "展示结果" : lang === "id" ? "Tunjukkin hasil" : "Show the result/payoff", dialogue: copy.payoff() },
+    { time: `${end - 3}-${end}s`, angle: angles.close, action: lang === "zh" ? "行动号召，正面对镜头" : lang === "id" ? "CTA, hadap kamera lagi" : "Call to action, back to camera", dialogue: copy.cta(topic) },
+  ];
+}
+
 const TEMPLATES = {
   en: (topic, niche, platform, duration) => [
     `HOOK (0-3s): Open on a strong visual tied to "${topic}" — jump straight into the moment, no intro speech.`,
@@ -73,9 +127,11 @@ function generateScript({ account, topic, duration_sec, equipment, platform, lan
   const plat = platform || acct.platform;
   const lang = TEMPLATES[language] ? language : "en";
   const script = TEMPLATES[lang](topic, niche, plat, dur);
+  const shotList = buildShotList(topic, niche, Number(duration_sec) || 30, lang);
 
   return {
     script,
+    shot_list: shotList,
     equipment: (equipment && equipment.length) ? equipment.join(", ") : "iPhone 16 Pro Max, DJI Microphone (x2)",
     video_length: dur,
     best_time: bestPostingTime(plat),

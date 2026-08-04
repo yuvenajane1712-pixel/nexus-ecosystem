@@ -59,7 +59,7 @@
       </div>
 
       <div class="section-title">Product Catalog (name once, price per variant)</div>
-      <button class="secondary" style="margin-bottom:10px;" onclick="NEXUS.openSheet('taProductSheet')">+ Add Product to Catalog</button>
+      <button class="secondary" style="margin-bottom:10px;" onclick="openTAProductSheet()">+ Add Product to Catalog</button>
       <div id="taCatalogList"><div class="empty">No products yet</div></div>
 
       <div class="section-title">Nadylan Orders (Track A — China → Indonesia)</div>
@@ -73,6 +73,9 @@
         <div class="row"><span class="label">Track B open orders</span><span class="val" id="trackbOpen">—</span></div>
         <button class="small secondary" onclick="seedCatalog()">Load default product catalog</button>
       </div>
+
+      <div class="section-title">Product Comparison Table</div>
+      <div id="catalogCompareList"><div class="empty">No products yet</div></div>
 
       <div class="section-title">Add Product with Full Specs</div>
       <div class="card">
@@ -244,8 +247,21 @@
       <h2>Add Product to Catalog</h2>
       <label>Product name</label>
       <input id="ta_name" placeholder="e.g. Phone Case Model X" />
-      <label>Description</label>
+      <label>Description (editable)</label>
       <textarea id="ta_desc" rows="2" placeholder="Editable description..."></textarea>
+      <label>Supplier (from Contact Info)</label>
+      <select id="ta_supplier"></select>
+      <label>Quality</label>
+      <input id="ta_quality" placeholder="e.g. Grade A" />
+      <label>How many specs/materials do they have?</label>
+      <input id="ta_specs_count" type="number" placeholder="e.g. 3" />
+      <label>Colors (list)</label>
+      <div id="ta_colorList"></div>
+      <button class="small secondary" type="button" onclick="addColorRow()">+ Add color</button>
+      <label style="margin-top:10px;">Cost per CBM — international logistics</label>
+      <input id="ta_cbmcost" type="number" placeholder="e.g. 300" />
+      <label>Markup % (default suggestion for orders using this product)</label>
+      <input id="ta_markup" type="number" placeholder="e.g. 25" />
       <button onclick="submitTAProduct()">Save Product</button>
     </div>
   </div>
@@ -447,6 +463,10 @@
       <div class="grid2"><input id="b_vat" type="number" placeholder="0" /><select id="b_vat_cur"><option value="RMB">RMB</option><option value="IDR">IDR</option></select></div>
       <label>Misc fees</label>
       <div class="grid2"><input id="b_misc" type="number" placeholder="0" /><select id="b_misc_cur"><option value="RMB">RMB</option><option value="IDR">IDR</option></select></div>
+      <label>Price per kg (IDR)</label>
+      <input id="b_kg_idr" type="number" placeholder="85000" />
+      <label>Price per kg (RMB)</label>
+      <input id="b_kg_rmb" type="number" placeholder="25" />
       <label>Payment method</label>
       <input id="b_payment" placeholder="e.g. Bank transfer" />
       <label>Status</label>
@@ -454,6 +474,10 @@
         <option value="open">Open</option>
         <option value="completed">Completed (posts profit to Budget)</option>
       </select>
+      <label>Receiving bank account</label>
+      <select id="b_bankAccount"></select>
+      <label>Team member contact (shown on invoice)</label>
+      <select id="b_teamMember"></select>
       <button onclick="submitTrackB()">Save Order</button>
     </div>
   </div>
@@ -575,9 +599,10 @@
       <input id="r_name" placeholder="e.g. Nasi Goreng" />
       <label>Category</label>
       <select id="r_category"><option value="food">Food</option><option value="beverage">Beverage</option><option value="baking">Baking</option></select>
-      <label>Ingredients (name:cost, comma separated)</label>
-      <input id="r_ingredients" placeholder="rice:5, egg:2, soy sauce:1" />
-      <label>Instructions</label>
+      <label>Ingredients (unlimited list)</label>
+      <div id="ingredientList"></div>
+      <button class="small secondary" type="button" onclick="addIngredientRow()">+ Add ingredient</button>
+      <label style="margin-top:10px;">Instructions</label>
       <textarea id="r_instructions" rows="3" placeholder="Step by step..."></textarea>
       <label>Prep time</label>
       <input id="r_preptime" placeholder="15 min" />

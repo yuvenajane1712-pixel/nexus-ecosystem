@@ -266,6 +266,12 @@
       <label><input type="checkbox" id="p_glutenfree" style="width:auto;display:inline;" /> Gluten-free</label>
       <label><input type="checkbox" id="p_dairyfree" style="width:auto;display:inline;" /> Dairy-free</label>
       <label><input type="checkbox" id="p_soyfree" style="width:auto;display:inline;" /> Soy-free</label>
+      <label>Goal</label>
+      <select id="p_goal_type">
+        <option value="lose_weight">Lose Weight</option>
+        <option value="maintain">Maintain</option>
+        <option value="gain_muscle">Gain Muscle</option>
+      </select>
       <div class="grid2">
         <div><label>Goal weight (kg)</label><input id="p_goal" type="number" placeholder="65" /></div>
         <div><label>Goal date</label><input id="p_goal_date" type="date" /></div>
@@ -287,6 +293,12 @@
       </div>
       <label>Age</label>
       <input id="up_age" type="number" />
+      <label>Goal</label>
+      <select id="up_goal_type">
+        <option value="lose_weight">Lose Weight</option>
+        <option value="maintain">Maintain</option>
+        <option value="gain_muscle">Gain Muscle</option>
+      </select>
       <label>Goal weight (kg, optional — affects calorie target)</label>
       <input id="up_goal" type="number" />
       <label>Goal date (target)</label>

@@ -31,24 +31,46 @@ const FOOD_SEED = [
 const ACTIVITY_FACTORS = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, very_active: 1.9 };
 
 function calcDailyNeeds(person, goalWeightKg) {
-  const { weight_kg: w, height_cm: h, age, gender, activity_level } = person;
+  const { weight_kg: w, height_cm: h, age, gender, activity_level, goal_type } = person;
   // Mifflin-St Jeor BMR
   const bmr = gender === "male" ? 10 * w + 6.25 * h - 5 * age + 5 : 10 * w + 6.25 * h - 5 * age - 161;
   const tdee = bmr * (ACTIVITY_FACTORS[activity_level] || 1.55);
 
-  // if there's a weight goal (losing), apply a moderate ~15% deficit; if gaining, ~10% surplus
+  // prefer explicit goal_type; fall back to inferring from goal weight vs current weight
   let calorieTarget = tdee;
-  if (goalWeightKg && goalWeightKg < w) calorieTarget = tdee * 0.85;
-  else if (goalWeightKg && goalWeightKg > w) calorieTarget = tdee * 1.10;
+  let proteinMultiplier = 1.6; // g/kg bodyweight, standard for fat loss / maintenance
+  const gt = goal_type || (goalWeightKg && goalWeightKg < w ? "lose_weight" : goalWeightKg && goalWeightKg > w ? "gain_muscle" : "maintain");
+  if (gt === "lose_weight") { calorieTarget = tdee * 0.85; proteinMultiplier = 1.8; } // higher protein protects muscle in a deficit
+  else if (gt === "gain_muscle") { calorieTarget = tdee * 1.10; proteinMultiplier = 2.0; } // higher protein supports muscle synthesis in a surplus
+  else calorieTarget = tdee; // maintain
 
-  const proteinG = Math.round(w * 1.6); // g/kg bodyweight — supports fat loss / muscle retention
+  const proteinG = Math.round(w * proteinMultiplier);
   const fatG = Math.round((calorieTarget * 0.27) / 9);
   const proteinCal = proteinG * 4;
   const fatCal = fatG * 9;
   const carbG = Math.round(Math.max(0, calorieTarget - proteinCal - fatCal) / 4);
   const fiberG = gender === "male" ? 38 : 25;
 
-  return { bmr: Math.round(bmr), tdee: Math.round(tdee), calorieTarget: Math.round(calorieTarget), proteinG, fatG, carbG, fiberG };
+  return { bmr: Math.round(bmr), tdee: Math.round(tdee), calorieTarget: Math.round(calorieTarget), proteinG, fatG, carbG, fiberG, goalType: gt };
+}
+
+// rule-based diet + workout recommendation based on the person's goal — not a live AI call
+function recommendPlan(goalType, activityLevel) {
+  const plans = {
+    lose_weight: {
+      diet: "Moderate calorie deficit (~15% under maintenance) with high protein to preserve muscle. Prioritize lean protein + fiber-rich veg at every meal to stay full on fewer calories. Limit refined carbs and sugary drinks.",
+      workout: "4-5x/week: 3 days strength training (full body, preserves muscle during the deficit) + 2 days cardio (20-30 min moderate intensity — walking, cycling, swimming). Strength training matters more than cardio here.",
+    },
+    gain_muscle: {
+      diet: "Moderate calorie surplus (~10% over maintenance) with high protein (2g/kg) spread across meals to maximize muscle protein synthesis. Carbs should be adequate to fuel training.",
+      workout: "4-6x/week strength training with progressive overload (increasing weight/reps over time), split by muscle group. Keep cardio light (1-2x/week) so it doesn't compete with recovery.",
+    },
+    maintain: {
+      diet: "Eat at maintenance calories with a balanced macro split. Focus on food quality and consistency rather than restriction.",
+      workout: "3-4x/week mixed training — a blend of strength and cardio — to maintain fitness and body composition.",
+    },
+  };
+  return plans[goalType] || plans.maintain;
 }
 
 function foodEquivalents(targetGrams, category, foods) {
@@ -84,24 +106,24 @@ module.exports = function (io) {
   });
 
   router.post("/", (req, res) => {
-    const { name, height_cm, weight_kg, age, gender, activity_level, no_red_meat, gluten_free, dairy_free, soy_free, notes } = req.body;
+    const { name, height_cm, weight_kg, age, gender, activity_level, no_red_meat, gluten_free, dairy_free, soy_free, notes, goal_type, goal_weight_kg, goal_date } = req.body;
     if (!name) return res.status(400).json({ error: "name required" });
     const info = db.prepare(`
-      INSERT INTO people (name, height_cm, weight_kg, age, gender, activity_level, no_red_meat, gluten_free, dairy_free, soy_free, notes)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)
+      INSERT INTO people (name, height_cm, weight_kg, age, gender, activity_level, no_red_meat, gluten_free, dairy_free, soy_free, notes, goal_type, goal_weight_kg, goal_date)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(name, height_cm || null, weight_kg || null, age || null, gender || "female", activity_level || "moderate",
-      no_red_meat ? 1 : 0, gluten_free ? 1 : 0, dairy_free ? 1 : 0, soy_free ? 1 : 0, notes || "");
+      no_red_meat ? 1 : 0, gluten_free ? 1 : 0, dairy_free ? 1 : 0, soy_free ? 1 : 0, notes || "", goal_type || "", goal_weight_kg || null, goal_date || null);
     emit();
     res.json({ id: info.lastInsertRowid });
   });
 
   router.put("/:id", (req, res) => {
-    const { name, height_cm, weight_kg, age, gender, activity_level, no_red_meat, gluten_free, dairy_free, soy_free, notes, goal_weight_kg, goal_date, excluded_foods } = req.body;
+    const { name, height_cm, weight_kg, age, gender, activity_level, no_red_meat, gluten_free, dairy_free, soy_free, notes, goal_type, goal_weight_kg, goal_date, excluded_foods } = req.body;
     db.prepare(`
-      UPDATE people SET name=?, height_cm=?, weight_kg=?, age=?, gender=?, activity_level=?, no_red_meat=?, gluten_free=?, dairy_free=?, soy_free=?, notes=?, goal_weight_kg=?, goal_date=?, excluded_foods=?
+      UPDATE people SET name=?, height_cm=?, weight_kg=?, age=?, gender=?, activity_level=?, no_red_meat=?, gluten_free=?, dairy_free=?, soy_free=?, notes=?, goal_type=?, goal_weight_kg=?, goal_date=?, excluded_foods=?
       WHERE id=?
     `).run(name, height_cm || null, weight_kg || null, age || null, gender || "female", activity_level || "moderate",
-      no_red_meat ? 1 : 0, gluten_free ? 1 : 0, dairy_free ? 1 : 0, soy_free ? 1 : 0, notes || "", goal_weight_kg || null, goal_date || null,
+      no_red_meat ? 1 : 0, gluten_free ? 1 : 0, dairy_free ? 1 : 0, soy_free ? 1 : 0, notes || "", goal_type || "", goal_weight_kg || null, goal_date || null,
       excluded_foods !== undefined ? JSON.stringify(excluded_foods) : "[]", req.params.id);
     emit();
     res.json({ ok: true });
@@ -145,7 +167,8 @@ module.exports = function (io) {
       bmr: needs.bmr, tdee: needs.tdee, calorie_target: needs.calorieTarget,
       protein_target_g: needs.proteinG, fat_target_g: needs.fatG, carb_target_g: needs.carbG, fiber_target_g: needs.fiberG,
       water_target_ml: waterTargetMl,
-      goal_weight_kg: person.goal_weight_kg, goal_date: person.goal_date,
+      goal_weight_kg: person.goal_weight_kg, goal_date: person.goal_date, goal_type: needs.goalType,
+      recommended_plan: recommendPlan(needs.goalType, person.activity_level),
       excluded_foods: excluded,
       protein_food_equivalents: proteinFoods,
       carb_food_equivalents: carbFoods,

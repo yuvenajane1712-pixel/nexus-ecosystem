@@ -45,7 +45,7 @@ document.getElementById("fabBtn").addEventListener("click", () => {
   if (activeTab === "indocha") {
     openActionSheet([
       { label: "🛒 Log a grocery price", onSelect: () => NEXUS.openSheet("priceSheet") },
-      { label: "📖 Add a recipe", onSelect: () => NEXUS.openSheet("recipeSheet") },
+      { label: "📖 Add a recipe", onSelect: () => { resetIngredientList(); NEXUS.openSheet("recipeSheet"); } },
     ]);
     return;
   }
@@ -132,16 +132,23 @@ async function loadTACatalog() {
   const el = document.getElementById("taCatalogList");
   if (!products.length) { el.innerHTML = '<div class="empty">No products yet</div>'; }
   else {
-    el.innerHTML = products.map(p => `
+    el.innerHTML = products.map(p => {
+      let colors = [];
+      try { colors = JSON.parse(p.colors || "[]"); } catch (e) {}
+      return `
       <div class="card">
         <div class="row"><span class="label"><strong>${p.name}</strong></span><button class="small secondary" onclick="deleteTAProduct(${p.id})">🗑</button></div>
         ${p.description ? `<div class="meta">${p.description}</div>` : ''}
+        <div class="meta">${[p.supplier_name && 'Supplier: '+p.supplier_name, p.quality && 'Quality: '+p.quality, p.specs_count && p.specs_count+' specs/materials'].filter(Boolean).join(' · ')}</div>
+        ${colors.length ? `<div class="meta">Colors: ${colors.join(', ')}</div>` : ''}
+        <div class="meta">${[p.cost_per_cbm_intl && 'CBM logistics cost: '+NEXUS.fmtMoney(p.cost_per_cbm_intl), p.markup_pct ? 'Markup: '+p.markup_pct+'%' : ''].filter(Boolean).join(' · ')}</div>
         ${(p.variants || []).map(v => `
           <div class="row"><span class="label">${v.spec_label}</span><span class="val">${NEXUS.fmtMoney(v.price, v.currency)} <a href="#" onclick="deleteTAVariant(${v.id});return false;">✕</a></span></div>
         `).join("")}
         <button class="small secondary" style="margin-top:6px;" onclick="openTAVariantSheet(${p.id})">+ Add price variant</button>
       </div>
-    `).join("");
+    `;
+    }).join("");
   }
   // also refresh the item-sheet catalog picker
   const pick = document.getElementById("i_catalogPick");
@@ -162,13 +169,45 @@ function fillFromCatalog() {
   document.getElementById("tav_productId") && (window.__lastVariantId = variantId);
 }
 
+function addColorRow() {
+  const el = document.getElementById("ta_colorList");
+  const row = document.createElement("div");
+  row.className = "grid2";
+  row.innerHTML = `<input type="text" class="color-input" placeholder="e.g. Black" /><button type="button" class="small secondary" onclick="this.parentElement.remove()">✕</button>`;
+  el.appendChild(row);
+}
+function resetColorList() {
+  document.getElementById("ta_colorList").innerHTML = "";
+  addColorRow();
+}
+
+async function loadTAProductSheetDropdowns() {
+  await loadCRMDropdown("ta_supplier", ["id_supplier", "cn_supplier"], true);
+}
+
+function openTAProductSheet() {
+  resetColorList();
+  loadTAProductSheetDropdowns();
+  NEXUS.openSheet("taProductSheet");
+}
+
 async function submitTAProduct() {
   const name = document.getElementById("ta_name").value.trim();
   const description = document.getElementById("ta_desc").value.trim();
   if (!name) { alert("Product name is required."); return; }
-  await NEXUS.post("/api/business/products-catalog", { name, description });
+  const colors = Array.from(document.querySelectorAll("#ta_colorList .color-input")).map(i => i.value.trim()).filter(Boolean);
+  await NEXUS.post("/api/business/products-catalog", {
+    name, description,
+    supplier_id: document.getElementById("ta_supplier").value || null,
+    quality: document.getElementById("ta_quality").value,
+    specs_count: document.getElementById("ta_specs_count").value,
+    colors,
+    cost_per_cbm_intl: document.getElementById("ta_cbmcost").value,
+    markup_pct: document.getElementById("ta_markup").value,
+  });
   NEXUS.closeSheet("taProductSheet");
-  ["ta_name","ta_desc"].forEach(id => document.getElementById(id).value = "");
+  ["ta_name","ta_desc","ta_quality","ta_specs_count","ta_cbmcost","ta_markup"].forEach(id => document.getElementById(id).value = "");
+  resetColorList();
   loadTACatalog();
 }
 
@@ -598,29 +637,6 @@ async function submitTour() {
 
 async function completeTour(id) { await NEXUS.put(`/api/business/tours/${id}/complete`, {}); loadTours(); }
 
-async function updateTourStatus(id, val) {
-  await NEXUS.put(`/api/business/tours/${id}/status`, { tour_status: val });
-  loadTours();
-}
-
-async function openFeedback(tourId) {
-  const form = await NEXUS.get(`/api/business/tours/${tourId}/feedback-form`);
-  document.getElementById("fb_tourId").value = tourId;
-  document.getElementById("fb_questions").innerHTML = form.questions.map((q, i) => `
-    <label>${i + 1}. ${q}</label>
-    <textarea class="fb-answer" rows="2" data-q="${q}"></textarea>
-  `).join("");
-  NEXUS.openSheet("feedbackSheet");
-}
-
-async function submitFeedback() {
-  const tourId = document.getElementById("fb_tourId").value;
-  const answers = {};
-  document.querySelectorAll("#fb_questions .fb-answer").forEach(t => { answers[t.dataset.q] = t.value; });
-  await NEXUS.post(`/api/business/tours/${tourId}/feedback`, { answers });
-  NEXUS.closeSheet("feedbackSheet");
-  alert("Feedback saved. Thank you!");
-}
 async function updateTourStatus(id, val) { await NEXUS.put(`/api/business/tours/${id}/status`, { tour_status: val }); loadTours(); }
 
 async function openFeedback(tourId) {
@@ -765,9 +781,15 @@ async function loadTrackBProductDropdown() {
   if (!catalog.length) { sel.innerHTML = '<option value="">No catalog products — add one in the catalog section first</option>'; return; }
   sel.innerHTML = catalog.map(p => `<option value="${p.id}">${p.name} (${p.category})</option>`).join("");
   await loadCRMDropdown("b_buyer", ["cn_buyer"]);
+  await loadCRMDropdown("b_teamMember", ["team_member"], true);
+  const banks = await NEXUS.get("/api/bank-accounts");
+  document.getElementById("b_bankAccount").innerHTML = banks.length
+    ? banks.map(b => `<option value="${b.id}">${b.bank_name} — ${b.account_number}</option>`).join("")
+    : '<option value="">No bank accounts saved — add one in Invoice Settings</option>';
 }
 
 async function loadTrackBOrders() {
+  await loadCatalogCompare();
   await loadTrackBProductDropdown();
   const orders = await NEXUS.get("/api/trackb/orders");
   document.getElementById("trackbOpen").textContent = orders.filter(o => o.status === 'open').length;
@@ -821,6 +843,10 @@ async function submitTrackB() {
   const misc_currency = document.getElementById("b_misc_cur").value;
   const payment_method = document.getElementById("b_payment").value;
   const status = document.getElementById("b_status").value;
+  const price_per_kg_idr = document.getElementById("b_kg_idr").value;
+  const price_per_kg_rmb = document.getElementById("b_kg_rmb").value;
+  const bank_account_id = document.getElementById("b_bankAccount").value || null;
+  const team_member_id = document.getElementById("b_teamMember").value || null;
   if (!buyer_name || !selling_price) { alert("Buyer name and selling price are required."); return; }
 
   await NEXUS.post("/api/trackb/orders", {
@@ -828,10 +854,29 @@ async function submitTrackB() {
     cost_price, cost_currency, selling_price, selling_currency,
     freight, freight_currency, insurance, insurance_currency,
     vat, vat_currency, misc_fees, misc_currency, payment_method, status,
+    price_per_kg_idr, price_per_kg_rmb, bank_account_id, team_member_id,
   });
   NEXUS.closeSheet("trackbSheet");
-  ["b_buyer","b_cost","b_sell","b_feerate","b_freight","b_insurance","b_vat","b_misc","b_payment"].forEach(id => document.getElementById(id).value = "");
+  ["b_cost","b_sell","b_feerate","b_freight","b_insurance","b_vat","b_misc","b_payment","b_kg_idr","b_kg_rmb"].forEach(id => document.getElementById(id).value = "");
   loadTrackBOrders();
+}
+
+async function loadCatalogCompare() {
+  const grouped = await NEXUS.get("/api/trackb/catalog/compare");
+  const el = document.getElementById("catalogCompareList");
+  const entries = Object.entries(grouped);
+  if (!entries.length) { el.innerHTML = '<div class="empty">No products yet</div>'; return; }
+  el.innerHTML = entries.map(([category, products]) => `
+    <div class="card">
+      <h3>${category}</h3>
+      ${products.map((p, i) => `
+        <div style="border-top:${i>0?'1px solid #EEE':'none'}; padding-top:${i>0?'8px':'0'}; margin-top:${i>0?'8px':'0'};">
+          <div class="row"><span class="label"><strong>${i+1}. ${p.name}</strong></span><span class="val">${p.grade ? 'Grade '+p.grade : ''}</span></div>
+          <div class="meta">${[p.process && 'Process: '+p.process, p.variety && 'Variety: '+p.variety, p.altitude && 'Altitude: '+p.altitude].filter(Boolean).join(' · ')}</div>
+        </div>
+      `).join("")}
+    </div>
+  `).join("");
 }
 
 async function updateTrackBStatus(id, val) { await NEXUS.put(`/api/trackb/orders/${id}/status`, { pipeline_status: val }); loadTrackBOrders(); }
@@ -1018,7 +1063,15 @@ async function generateScript() {
       <div class="row"><span class="label">Platform</span><span class="val">${res.platforms}</span></div>
       <div class="meta" style="white-space:pre-wrap;margin-top:8px;">${res.script}</div>
     </div>
-    <div class="meta" style="margin-top:6px;font-style:italic;">Note: script templates are authored per language, not a live AI translation call — wire in a real AI API key for fully generative scripts.</div>
+    <div class="section-title">Second-by-Second Shot List</div>
+    ${(res.shot_list || []).map(s => `
+      <div class="card">
+        <div class="row"><span class="label"><strong>${s.time}</strong></span><span class="val mini-tag">${s.angle}</span></div>
+        <div class="meta">${s.action}</div>
+        <div class="meta" style="font-style:italic;margin-top:4px;">"${s.dialogue}"</div>
+      </div>
+    `).join("")}
+    <div class="meta" style="margin-top:6px;font-style:italic;">Note: script and shot list are authored templates per language, not a live AI call — wire in a real AI API key for fully generative scripts.</div>
   `;
 }
 
@@ -1085,33 +1138,51 @@ async function loadRecipes() {
   const recipes = await NEXUS.get("/api/indocha/recipes");
   const el = document.getElementById("recipesList");
   if (!recipes.length) { el.innerHTML = '<div class="empty">No recipes yet</div>'; return; }
-  el.innerHTML = recipes.map(r => `
+  el.innerHTML = recipes.map(r => {
+    let ingredients = [];
+    try { ingredients = JSON.parse(r.ingredients_json || "[]"); } catch (e) {}
+    return `
     <div class="card">
       <h3>${r.name} <span class="mini-tag">${r.category} · v${r.version}</span></h3>
       <div class="meta">Total cost: ¥${r.total_cost} · Prep: ${r.prep_time || '-'} · Shelf life: ${r.shelf_life || '-'}</div>
+      ${ingredients.length ? `<div class="meta" style="margin-top:6px;">${ingredients.map(i => `${i.name} (${i.grams || 0}g${i.cost ? ', ¥'+i.cost : ''})`).join(' · ')}</div>` : ''}
       <div class="meta" style="margin-top:6px;">${r.instructions || ''}</div>
     </div>
-  `).join("");
+  `;
+  }).join("");
+}
+
+function addIngredientRow() {
+  const el = document.getElementById("ingredientList");
+  const row = document.createElement("div");
+  row.style.cssText = "display:grid;grid-template-columns:2fr 1fr 1fr;gap:6px;margin-bottom:8px;";
+  row.innerHTML = `<input type="text" class="ing-name" placeholder="e.g. rice" style="margin:0;" /><input type="number" class="ing-grams" placeholder="grams/pc" style="margin:0;" /><input type="number" class="ing-cost" placeholder="cost RMB" style="margin:0;" />`;
+  el.appendChild(row);
+}
+function resetIngredientList() {
+  document.getElementById("ingredientList").innerHTML = "";
+  addIngredientRow();
 }
 
 async function submitRecipe() {
   const name = document.getElementById("r_name").value.trim();
   const category = document.getElementById("r_category").value;
-  const ingredientsRaw = document.getElementById("r_ingredients").value.trim();
   const instructions = document.getElementById("r_instructions").value.trim();
   const prep_time = document.getElementById("r_preptime").value.trim();
   const shelf_life = document.getElementById("r_shelflife").value.trim();
   const storage_method = document.getElementById("r_storage").value.trim();
   if (!name) { alert("Name is required."); return; }
 
-  const ingredients = ingredientsRaw.split(",").map(part => {
-    const [ing_name, cost] = part.split(":").map(s => (s || "").trim());
-    return { name: ing_name, cost: Number(cost) || 0 };
-  }).filter(i => i.name);
+  const ingredients = Array.from(document.querySelectorAll("#ingredientList > div")).map(row => ({
+    name: row.querySelector(".ing-name").value.trim(),
+    grams: Number(row.querySelector(".ing-grams").value) || 0,
+    cost: Number(row.querySelector(".ing-cost").value) || 0,
+  })).filter(i => i.name);
 
   await NEXUS.post("/api/indocha/recipes", { name, category, ingredients_json: JSON.stringify(ingredients), instructions, prep_time, shelf_life, storage_method });
   NEXUS.closeSheet("recipeSheet");
-  ["r_name","r_ingredients","r_instructions","r_preptime","r_shelflife","r_storage"].forEach(id => document.getElementById(id).value = "");
+  ["r_name","r_instructions","r_preptime","r_shelflife","r_storage"].forEach(id => document.getElementById(id).value = "");
+  resetIngredientList();
   loadRecipes();
 }
 
