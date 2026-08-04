@@ -214,6 +214,16 @@
       </select>
       <label>Service fee % (auto-suggested, editable)</label>
       <input id="o_fee" type="number" placeholder="10" value="10" />
+      <label>Profit method</label>
+      <select id="o_markupMode" onchange="toggleMarkupFields()">
+        <option value="fee">Service fee only (shown on invoice)</option>
+        <option value="markup">Markup product cost only (hidden on invoice)</option>
+        <option value="both">Both — markup + fee</option>
+      </select>
+      <div id="o_markupPctField" class="hidden">
+        <label>Markup % (hidden — inflates the product cost shown on the invoice)</label>
+        <input id="o_markupPct" type="number" placeholder="25" />
+      </div>
       <label>Urgency (1 low – 5 very urgent)</label>
       <input id="o_urgency" type="number" min="1" max="5" value="1" />
       <button onclick="submitOrder()">Create Order — then add products</button>

@@ -7,6 +7,55 @@ const db = require("../db");
 function fmtRMB(n) { return "¥" + Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 }); }
 function fmtIDR(n) { return "Rp " + Number(n || 0).toLocaleString("id-ID", { maximumFractionDigits: 0 }); }
 
+const NAVY = "#1F3864";
+const TEAL = "#0F6E6E";
+const GRAY = "#666666";
+const LIGHT = "#F4F6F6";
+
+// shared professional invoice header — used by every service type
+function drawInvoiceHeader(doc, { companySuffix, serviceName, invoiceNumber, orderDate, paymentDate, trackingCode, logisticsTrackingCode, billTo }) {
+  // top color band
+  doc.rect(0, 0, doc.page.width, 90).fill(NAVY);
+  doc.fillColor("#FFFFFF").fontSize(22).font("Helvetica-Bold").text(`NEXUS - ${companySuffix}`, 50, 28);
+  doc.fontSize(12).font("Helvetica").fillColor("#CFE0E8").text(serviceName, 50, 58);
+
+  doc.fillColor("#000000").font("Helvetica");
+  let y = 110;
+  doc.fontSize(11).fillColor(TEAL).font("Helvetica-Bold").text(`Order #${invoiceNumber}`, 50, y);
+  y += 20;
+  doc.fontSize(10).fillColor("#000").font("Helvetica");
+  doc.text(`Order date: ${orderDate || "-"}`, 50, y);
+  doc.text(`Payment date: ${paymentDate || "-"}`, 300, y);
+  y += 16;
+  if (trackingCode !== undefined) {
+    doc.text(`Tracking code (ours): ${trackingCode || "-"}`, 50, y);
+    doc.text(`Tracking code (logistics): ${logisticsTrackingCode || "-"}`, 300, y);
+    y += 22;
+  } else {
+    y += 6;
+  }
+
+  doc.moveTo(50, y).lineTo(doc.page.width - 50, y).strokeColor("#DDDDDD").stroke();
+  y += 14;
+  doc.fontSize(10).fillColor(GRAY).text("BILL TO", 50, y);
+  y += 14;
+  doc.fontSize(13).fillColor("#000").font("Helvetica-Bold").text(billTo || "-", 50, y);
+  doc.font("Helvetica");
+  y += 26;
+  return y;
+}
+
+function drawBankSection(doc, y, cfg, invoiceNumber) {
+  doc.rect(50, y, doc.page.width - 100, 90).fill(LIGHT);
+  doc.fillColor(TEAL).fontSize(12).font("Helvetica-Bold").text("Bank Transfer Information", 62, y + 10);
+  doc.fillColor("#000").fontSize(10).font("Helvetica");
+  doc.text(`Bank name: ${cfg.bank_name || "-"}`, 62, y + 30);
+  doc.text(`Account name: ${cfg.bank_account_name || "-"}`, 62, y + 44);
+  doc.text(`Account number: ${cfg.bank_account_number || "-"}`, 62, y + 58);
+  doc.text(`Memo: Order #${invoiceNumber}`, 62, y + 72);
+  return y + 100;
+}
+
 module.exports = function () {
   const router = express.Router();
 
@@ -19,51 +68,78 @@ module.exports = function () {
     db.prepare("SELECT key, value FROM config").all().forEach((r) => (cfg[r.key] = r.value));
 
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename=invoice-order-${order.id}.pdf`);
+    res.setHeader("Content-Disposition", `attachment; filename=invoice-${order.invoice_number || order.id}.pdf`);
 
-    const doc = new PDFDocument({ margin: 50 });
+    const doc = new PDFDocument({ margin: 50, size: "A4" });
     doc.pipe(res);
 
-    doc.fontSize(20).fillColor("#1F3864").text(cfg.company_name || "Nadylan", { align: "left" });
-    doc.fontSize(11).fillColor("#666").text("Sourcing Invoice");
-    doc.moveDown(0.5);
-    doc.fontSize(10).fillColor("#666").text(`Order #${order.id}  ·  ${order.created_at}  ·  Status: ${order.pipeline_status || order.status}`);
-    if (order.tracking_code) doc.text(`Tracking code: ${order.tracking_code}`);
-    doc.moveDown(1);
-
-    doc.fontSize(12).fillColor("#000").text(`Bill to: ${order.buyer_name}`);
-    doc.text(`Exchange rate locked: ${order.fx_rate} IDR/RMB`);
-    doc.moveDown(1);
-
-    doc.fontSize(13).fillColor("#0F6E6E").text("Products");
-    doc.moveDown(0.3);
-    doc.fontSize(10).fillColor("#000");
-    items.forEach((i) => {
-      doc.text(`${i.name}${i.spec ? " (" + i.spec + ")" : ""} — qty ${i.qty} × ${fmtRMB(i.unit_price)} = ${fmtRMB(i.qty * i.unit_price)}  ·  CBM ${i.cbm}`);
+    let y = drawInvoiceHeader(doc, {
+      companySuffix: "NADYLAN",
+      serviceName: "Sourcing Invoice",
+      invoiceNumber: order.invoice_number || order.id,
+      orderDate: order.created_at ? order.created_at.slice(0, 10) : "-",
+      paymentDate: order.payment_date,
+      trackingCode: order.tracking_code,
+      logisticsTrackingCode: order.logistics_tracking_code,
+      billTo: order.buyer_name,
     });
-    doc.moveDown(1);
 
-    doc.fontSize(13).fillColor("#0F6E6E").text("Cost Breakdown (RMB / IDR)");
-    doc.moveDown(0.3);
-    doc.fontSize(11).fillColor("#000");
+    // product table — when a markup is active, scale displayed item prices by the same ratio
+    // so the invoice is internally consistent (the markup stays genuinely invisible)
+    const rawCost = items.reduce((s, i) => {
+      const lineTotal = (i.unit_price || 0) * (i.qty || 1);
+      const lineRmb = (i.currency === "IDR") ? lineTotal / order.fx_rate : lineTotal;
+      return s + lineRmb;
+    }, 0);
+    const markupRatio = rawCost > 0 ? order.product_cost / rawCost : 1;
+
+    doc.fontSize(11).fillColor(TEAL).font("Helvetica-Bold").text("Products", 50, y);
+    y += 18;
+    doc.fontSize(9).fillColor(GRAY).font("Helvetica-Bold");
+    doc.text("Product", 50, y); doc.text("Qty", 320, y); doc.text("Price", 400, y);
+    y += 14;
+    doc.moveTo(50, y).lineTo(doc.page.width - 50, y).strokeColor("#DDDDDD").stroke();
+    y += 8;
+    doc.font("Helvetica").fillColor("#000").fontSize(9.5);
+    items.forEach((i) => {
+      const displayPrice = (i.unit_price || 0) * markupRatio;
+      doc.text(`${i.name}${i.spec ? " (" + i.spec + ")" : ""}`, 50, y, { width: 260 });
+      doc.text(String(i.qty), 320, y);
+      doc.text(i.currency === "IDR" ? fmtIDR(displayPrice) : fmtRMB(displayPrice), 400, y);
+      y += 16;
+    });
+    y += 10;
+
+    // cost breakdown
+    doc.moveTo(50, y).lineTo(doc.page.width - 50, y).strokeColor("#DDDDDD").stroke();
+    y += 14;
+    doc.fontSize(11).fillColor(TEAL).font("Helvetica-Bold").text("Cost Breakdown (RMB / IDR)", 50, y);
+    y += 18;
+    doc.fontSize(10).fillColor("#000").font("Helvetica");
     const fx = order.fx_rate;
-    doc.text(`Product cost:        ${fmtRMB(order.product_cost)}  /  ${fmtIDR(order.product_cost * fx)}`);
-    doc.text(`Total CBM:           ${order.cbm_total}`);
-    doc.text(`Logistics cost:      ${fmtRMB(order.logistics_cost)}  /  ${fmtIDR(order.logistics_cost * fx)}`);
-    doc.text(`Service fee (${order.fee_pct}%):   ${fmtRMB(order.service_fee)}  /  ${fmtIDR(order.service_fee * fx)}`);
-    doc.moveDown(0.5);
-    doc.fontSize(13).fillColor("#1F3864").text(`Total client payment: ${fmtRMB(order.total_payment)}  /  ${fmtIDR(order.total_payment * fx)}`);
-    doc.fontSize(11).fillColor("#1E8449").text(`Net profit: ${fmtRMB(order.net_profit)}`);
+    const rows = [
+      ["Product cost", `${fmtRMB(order.product_cost)}  /  ${fmtIDR(order.product_cost * fx)}`],
+      ["Total CBM", `${order.cbm_total}`],
+      ["Logistics — national (China domestic)", `${fmtRMB(order.logistics_supplier_to_cn)}  /  ${fmtIDR((order.logistics_supplier_to_cn || 0) * fx)}`],
+      ["Logistics — international (freight + last mile)", `${fmtRMB((order.cbm_total || 0) * (order.logistics_rate_per_cbm || 0) + (order.logistics_id_to_buyer || 0))}  /  ${fmtIDR(((order.cbm_total || 0) * (order.logistics_rate_per_cbm || 0) + (order.logistics_id_to_buyer || 0)) * fx)}`],
+    ];
+    if (order.service_fee > 0) rows.push([`Service fee (${order.fee_pct}%)`, `${fmtRMB(order.service_fee)}  /  ${fmtIDR(order.service_fee * fx)}`]);
+    rows.forEach(([label, val]) => {
+      doc.fillColor(GRAY).text(label, 50, y);
+      doc.fillColor("#000").text(val, 300, y, { width: 250, align: "right" });
+      y += 16;
+    });
+    y += 6;
+    doc.moveTo(50, y).lineTo(doc.page.width - 50, y).strokeColor(NAVY).lineWidth(1.5).stroke();
+    y += 10;
+    doc.fontSize(13).fillColor(NAVY).font("Helvetica-Bold");
+    doc.text("Total client payment", 50, y);
+    doc.text(`${fmtRMB(order.total_payment)}  /  ${fmtIDR(order.total_payment * fx)}`, 250, y, { width: 300, align: "right" });
+    y += 30;
 
-    doc.moveDown(1.5);
-    doc.fontSize(13).fillColor("#0F6E6E").text("Bank Transfer Information");
-    doc.fontSize(11).fillColor("#000");
-    doc.text(`Bank: ${cfg.bank_name || "-"}`);
-    doc.text(`Account name: ${cfg.bank_account_name || "-"}`);
-    doc.text(`Account number: ${cfg.bank_account_number || "-"}`);
+    drawBankSection(doc, y, cfg, order.invoice_number || order.id);
 
-    doc.moveDown(2);
-    doc.fontSize(9).fillColor("#999").text("Generated by NEXUS Ecosystem — Business Tracker", { align: "center" });
+    doc.fontSize(8).fillColor("#AAAAAA").text("Generated by NEXUS Ecosystem", 50, doc.page.height - 40, { align: "center", width: doc.page.width - 100 });
 
     doc.end();
   });
@@ -72,32 +148,74 @@ module.exports = function () {
   router.get("/tour/:id/pdf", (req, res) => {
     const tour = db.prepare("SELECT * FROM tours WHERE id=?").get(req.params.id);
     if (!tour) return res.status(404).send("Tour not found");
+    const cfg = {};
+    db.prepare("SELECT key, value FROM config").all().forEach((r) => (cfg[r.key] = r.value));
+
+    const SERVICE_NAMES = {
+      only_booking: "Booking Fee Only",
+      custom_itinerary: "Custom Itinerary Only",
+      bigbus: "Custom Big Bus Tour",
+      private: "Private Tour",
+    };
+    const serviceName = SERVICE_NAMES[tour.tour_category] || tour.tier_name || "Tour Service";
 
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename=invoice-tour-${tour.id}.pdf`);
+    res.setHeader("Content-Disposition", `attachment; filename=invoice-${tour.invoice_number || tour.id}.pdf`);
 
-    const doc = new PDFDocument({ margin: 50 });
+    const doc = new PDFDocument({ margin: 50, size: "A4" });
     doc.pipe(res);
 
-    doc.fontSize(20).fillColor("#1F3864").text("NEXUS — Guangzhou Mate Tour Invoice");
-    doc.moveDown(0.5);
-    doc.fontSize(10).fillColor("#666").text(`Tour #${tour.id}  ·  ${tour.created_at}  ·  Status: ${tour.status}`);
-    doc.moveDown(1);
+    let y = drawInvoiceHeader(doc, {
+      companySuffix: "GUANGZHOUMATE",
+      serviceName,
+      invoiceNumber: tour.invoice_number || tour.id,
+      orderDate: tour.created_at ? tour.created_at.slice(0, 10) : "-",
+      paymentDate: tour.payment_date,
+      billTo: tour.client_name || "-",
+    });
 
-    doc.fontSize(12).fillColor("#000").text(`Package: ${tour.tier_name}`);
-    doc.text(`Type: ${tour.tour_type === "bigbus" ? "Big Bus Group Tour" : "Private Tour"}`);
-    doc.text(`Pax / Days: ${tour.pax_or_days}`);
-    doc.moveDown(1);
+    doc.fontSize(11).fillColor(TEAL).font("Helvetica-Bold").text("Service Details", 50, y);
+    y += 18;
+    doc.fontSize(10).fillColor("#000").font("Helvetica");
+    if (tour.tier_name) { doc.text(`Package: ${tour.tier_name}`, 50, y); y += 15; }
+    if (tour.date_from) { doc.text(`Travel: ${tour.date_from} → ${tour.date_to || ""}  (${tour.days || tour.pax_or_days || "-"} days)`, 50, y); y += 15; }
+    if (tour.pax_adults || tour.pax_children || tour.pax_infants || tour.pax_elderly) {
+      doc.text(`Pax: ${tour.pax_adults || 0} adult, ${tour.pax_children || 0} child, ${tour.pax_infants || 0} infant, ${tour.pax_elderly || 0} elderly`, 50, y);
+      y += 15;
+    }
+    if (tour.destinations) {
+      doc.text("Destinations:", 50, y); y += 14;
+      doc.fontSize(9).fillColor(GRAY).text(tour.destinations, 60, y, { width: 450 });
+      y += (tour.destinations.split("\n").length * 12) + 10;
+      doc.fillColor("#000").fontSize(10);
+    }
+    y += 10;
 
-    doc.fontSize(13).fillColor("#0F6E6E").text("Cost Breakdown");
-    doc.fontSize(11).fillColor("#000");
-    doc.text(`Total revenue: ${fmtIDR(tour.revenue)}`);
-    doc.text(`Total cost:    ${fmtIDR(tour.cost)}`);
-    doc.moveDown(0.5);
-    doc.fontSize(13).fillColor("#1E8449").text(`Net margin: ${fmtIDR(tour.margin)}`);
+    doc.moveTo(50, y).lineTo(doc.page.width - 50, y).strokeColor("#DDDDDD").stroke();
+    y += 14;
+    doc.fontSize(11).fillColor(TEAL).font("Helvetica-Bold").text("Cost Breakdown (IDR)", 50, y);
+    y += 18;
+    doc.fontSize(10).fillColor("#000").font("Helvetica");
+    const rows = [
+      ["Total cost to us", fmtIDR(tour.cost)],
+      ["Booking fee (5%)", fmtIDR(tour.booking_fee)],
+    ];
+    rows.forEach(([label, val]) => {
+      doc.fillColor(GRAY).text(label, 50, y);
+      doc.fillColor("#000").text(val, 300, y, { width: 250, align: "right" });
+      y += 16;
+    });
+    y += 6;
+    doc.moveTo(50, y).lineTo(doc.page.width - 50, y).strokeColor(NAVY).lineWidth(1.5).stroke();
+    y += 10;
+    doc.fontSize(13).fillColor(NAVY).font("Helvetica-Bold");
+    doc.text("Total client payment", 50, y);
+    doc.text(fmtIDR(tour.revenue), 250, y, { width: 300, align: "right" });
+    y += 30;
 
-    doc.moveDown(2);
-    doc.fontSize(9).fillColor("#999").text("Generated by NEXUS Ecosystem — Business Tracker", { align: "center" });
+    drawBankSection(doc, y, cfg, tour.invoice_number || tour.id);
+
+    doc.fontSize(8).fillColor("#AAAAAA").text("Generated by NEXUS Ecosystem", 50, doc.page.height - 40, { align: "center", width: doc.page.width - 100 });
 
     doc.end();
   });

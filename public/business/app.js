@@ -229,8 +229,12 @@ function renderOrderCard(o) {
         <div class="meta" style="margin-top:6px;">Locked rate: 1 RMB = ${o.fx_rate} IDR</div>
       </div>
 
-      <label style="margin-top:10px;">Tracking code</label>
+      <label style="margin-top:10px;">Tracking code (ours)</label>
       <input class="tracking-input" value="${o.tracking_code || ''}" placeholder="e.g. NX-2026-0001" onchange="updateTracking(${o.id}, this.value)" />
+      <label>Tracking code (international logistics carrier)</label>
+      <input class="tracking-input" value="${o.logistics_tracking_code || ''}" placeholder="e.g. carrier's AWB number" onchange="updateLogisticsTracking(${o.id}, this.value)" />
+      <div class="meta" style="margin-top:6px;">Profit method: ${{fee:'Service fee only', markup:'Markup only (hidden)', both:'Markup + fee'}[o.markup_mode] || o.markup_mode}${o.markup_mode !== 'fee' ? ' · markup ' + o.markup_pct + '%' : ''}</div>
+      <div class="meta">Invoice #${o.invoice_number || o.id}</div>
 
       <a class="export-link" href="/api/export/order/${o.id}/pdf" target="_blank">⬇ Export Invoice PDF</a>
     </div>
@@ -239,6 +243,7 @@ function renderOrderCard(o) {
 
 async function updateStatus(orderId, val) { await NEXUS.put(`/api/business/orders/${orderId}/status`, { pipeline_status: val }); loadOrders(); }
 async function updateTracking(orderId, val) { await NEXUS.put(`/api/business/orders/${orderId}/tracking`, { tracking_code: val }); }
+async function updateLogisticsTracking(orderId, val) { await NEXUS.put(`/api/business/orders/${orderId}`, { logistics_tracking_code: val }); }
 async function updateLogistics(orderId) {
   const logistics_rate_per_cbm = document.getElementById(`lr_${orderId}`).value;
   const logistics_supplier_to_cn = document.getElementById(`ls_${orderId}`).value;
@@ -353,13 +358,20 @@ function computeProfitSum(orders, tours) {
   if (el) el.textContent = `${NEXUS.fmtMoney(orderProfit)} + ${NEXUS.fmtMoney(tourMargin,'IDR')}`;
 }
 
+function toggleMarkupFields() {
+  const mode = document.getElementById("o_markupMode").value;
+  document.getElementById("o_markupPctField").classList.toggle("hidden", mode === "fee");
+}
+
 async function submitOrder() {
   const buyer_name = document.getElementById("o_buyer").value.trim();
   const fee_pct = document.getElementById("o_fee").value || 10;
   const urgency = document.getElementById("o_urgency").value || 1;
+  const markup_mode = document.getElementById("o_markupMode").value;
+  const markup_pct = document.getElementById("o_markupPct").value || 0;
   if (!buyer_name) { alert("Buyer name is required."); return; }
 
-  await NEXUS.post("/api/business/orders", { buyer_name, fee_pct, urgency });
+  await NEXUS.post("/api/business/orders", { buyer_name, fee_pct, urgency, markup_mode, markup_pct });
   NEXUS.closeSheet("orderSheet");
   document.getElementById("o_buyer").value = "";
   loadOrders();

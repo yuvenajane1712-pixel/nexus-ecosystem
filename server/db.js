@@ -397,6 +397,21 @@ try { db.exec("ALTER TABLE tours ADD COLUMN destinations TEXT"); } catch (e) {}
 // Health: per-person excluded foods (X out proteins/carbs they don't eat)
 try { db.exec("ALTER TABLE people ADD COLUMN excluded_foods TEXT DEFAULT '[]'"); } catch (e) {}
 
+// Nadylan Track A: markup/fee choice, invoice numbering, payment date, carrier tracking code
+try { db.exec("ALTER TABLE orders ADD COLUMN markup_mode TEXT DEFAULT 'fee'"); } catch (e) {}
+try { db.exec("ALTER TABLE orders ADD COLUMN markup_pct REAL DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE orders ADD COLUMN invoice_number TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE orders ADD COLUMN payment_date TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE orders ADD COLUMN logistics_tracking_code TEXT"); } catch (e) {}
+
+// Track B: invoice numbering, payment date
+try { db.exec("ALTER TABLE track_b_orders ADD COLUMN invoice_number TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE track_b_orders ADD COLUMN payment_date TEXT"); } catch (e) {}
+
+// Tours: invoice numbering, payment date
+try { db.exec("ALTER TABLE tours ADD COLUMN invoice_number TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE tours ADD COLUMN payment_date TEXT"); } catch (e) {}
+
 // People: weight goal + target date, water target
 try { db.exec("ALTER TABLE people ADD COLUMN goal_weight_kg REAL"); } catch (e) {}
 try { db.exec("ALTER TABLE people ADD COLUMN goal_date TEXT"); } catch (e) {}

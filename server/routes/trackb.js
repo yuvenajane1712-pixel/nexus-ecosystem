@@ -153,20 +153,23 @@ module.exports = function (io) {
       if (p) product_summary = `${p.name} (${p.category})`;
     }
 
+    const existingCount = db.prepare("SELECT COUNT(*) c FROM track_b_orders").get().c;
+    const invoiceNumber = `${existingCount + 1}B`;
+
     const info = db.prepare(`
       INSERT INTO track_b_orders (
         buyer_name, product_summary, catalog_product_id, profit_model, fee_rate,
         cost_price, cost_currency, selling_price, selling_currency,
         freight, freight_currency, insurance, insurance_currency,
         vat, vat_currency, misc_fees, misc_currency,
-        payment_method, status, pipeline_status, fx_rate
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'confirmed_both',?)
+        payment_method, status, pipeline_status, fx_rate, invoice_number
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'confirmed_both',?,?)
     `).run(
       buyer_name, product_summary, catalog_product_id || null, profit_model, fee_rate || 0,
       cost_price || 0, cost_currency || "RMB", selling_price || 0, selling_currency || "RMB",
       freight || 0, freight_currency || "RMB", insurance || 0, insurance_currency || "RMB",
       vat || 0, vat_currency || "RMB", misc_fees || 0, misc_currency || "RMB",
-      payment_method || "", status || "open", getFxRate()
+      payment_method || "", status || "open", getFxRate(), invoiceNumber
     );
 
     const totals = recomputeTrackB(info.lastInsertRowid);
@@ -174,11 +177,11 @@ module.exports = function (io) {
 
     if ((status || "open") === "completed") {
       db.prepare("INSERT INTO transactions (kind, category, amount_rmb, source, note) VALUES (?,?,?,?,?)")
-        .run("income", "Nadylan Trade Profit", totals.profit, "business", `Track B Order #${info.lastInsertRowid} (${buyer_name})`);
+        .run("income", "Nadylan Trade Profit", totals.profit, "business", `Track B Order #${invoiceNumber} (${buyer_name})`);
       emitBudget();
     }
 
-    res.json({ id: info.lastInsertRowid, profit: totals.profit, margin_pct: totals.marginPct });
+    res.json({ id: info.lastInsertRowid, profit: totals.profit, margin_pct: totals.marginPct, invoice_number: invoiceNumber });
   });
 
   router.put("/orders/:id/status", (req, res) => {
@@ -186,13 +189,18 @@ module.exports = function (io) {
     const order = db.prepare("SELECT * FROM track_b_orders WHERE id=?").get(req.params.id);
     if (!order) return res.status(404).json({ error: "not found" });
     const wasClosing = order.pipeline_status === "closing";
+
+    if (pipeline_status === "full_payment" && order.pipeline_status !== "full_payment") {
+      db.prepare("UPDATE track_b_orders SET payment_date=date('now') WHERE id=?").run(req.params.id);
+    }
+
     db.prepare("UPDATE track_b_orders SET pipeline_status=? WHERE id=?").run(pipeline_status, req.params.id);
     const totals = recomputeTrackB(req.params.id);
 
     if (pipeline_status === "closing" && !wasClosing) {
       db.prepare("UPDATE track_b_orders SET status='completed' WHERE id=?").run(req.params.id);
       db.prepare("INSERT INTO transactions (kind, category, amount_rmb, source, note) VALUES (?,?,?,?,?)")
-        .run("income", "Nadylan Trade Profit", totals.profit, "business", `Track B Order #${order.id} (${order.buyer_name})`);
+        .run("income", "Nadylan Trade Profit", totals.profit, "business", `Track B Order #${order.invoice_number || order.id} (${order.buyer_name})`);
       emitBudget();
     }
     emit();

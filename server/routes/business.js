@@ -68,16 +68,29 @@ module.exports = function (io) {
     const items = db.prepare("SELECT * FROM order_items WHERE order_id=?").all(orderId);
     const fx = order.fx_rate || getFxRate(); // IDR per RMB
 
-    const productCost = items.reduce((s, i) => {
+    const productCostRaw = items.reduce((s, i) => {
       const lineTotal = (i.unit_price || 0) * (i.qty || 1);
       const lineRmb = (i.currency === "IDR") ? lineTotal / fx : lineTotal;
       return s + lineRmb;
     }, 0);
     const cbmTotal = items.reduce((s, i) => s + (i.cbm || 0), 0);
     const logisticsCost = cbmTotal * (order.logistics_rate_per_cbm || 0) + (order.logistics_supplier_to_cn || 0) + (order.logistics_id_to_buyer || 0);
-    const serviceFee = productCost * ((order.fee_pct || 0) / 100);
+
+    // markup_mode: 'markup' (hidden in product cost) | 'fee' (shown as its own line) | 'both'
+    const mode = order.markup_mode || "fee";
+    let productCost = productCostRaw;
+    let markupAmount = 0;
+    if (mode === "markup" || mode === "both") {
+      productCost = productCostRaw * (1 + (order.markup_pct || 0) / 100);
+      markupAmount = productCost - productCostRaw;
+    }
+    let serviceFee = 0;
+    if (mode === "fee" || mode === "both") {
+      serviceFee = productCost * ((order.fee_pct || 0) / 100);
+    }
+
     const totalPayment = productCost + logisticsCost + serviceFee;
-    const netProfit = serviceFee;
+    const netProfit = markupAmount + serviceFee; // internal only — never shown on the invoice
 
     db.prepare(`
       UPDATE orders SET product_cost=?, cbm_total=?, logistics_cost=?, service_fee=?, total_payment=?, net_profit=?
@@ -149,23 +162,28 @@ module.exports = function (io) {
 
   // create an order shell (buyer + fee); products added as line items afterward
   router.post("/orders", (req, res) => {
-    const { buyer_name, fee_pct, urgency } = req.body;
+    const { buyer_name, fee_pct, urgency, markup_mode, markup_pct } = req.body;
     if (!buyer_name) return res.status(400).json({ error: "buyer_name required" });
     const fx = getFxRate();
+    const existingCount = db.prepare("SELECT COUNT(*) c FROM orders").get().c;
+    const invoiceNumber = `${existingCount + 1}A`;
     const info = db.prepare(`
-      INSERT INTO orders (buyer_name, product_cost, fee_pct, logistics_cost, service_fee, total_payment, net_profit, fx_rate, urgency, status, pipeline_status)
-      VALUES (?,0,?,0,0,0,0,?,?, 'open', 'lagi_dicari')
-    `).run(buyer_name, fee_pct || 10, fx, urgency || 1);
+      INSERT INTO orders (buyer_name, product_cost, fee_pct, logistics_cost, service_fee, total_payment, net_profit, fx_rate, urgency, status, pipeline_status, markup_mode, markup_pct, invoice_number)
+      VALUES (?,0,?,0,0,0,0,?,?, 'open', 'lagi_dicari', ?, ?, ?)
+    `).run(buyer_name, fee_pct || 10, fx, urgency || 1, markup_mode || "fee", markup_pct || 0, invoiceNumber);
     emit();
-    res.json({ id: info.lastInsertRowid });
+    res.json({ id: info.lastInsertRowid, invoice_number: invoiceNumber });
   });
 
   router.put("/orders/:id", (req, res) => {
-    const { buyer_name, fee_pct, urgency } = req.body;
+    const { buyer_name, fee_pct, urgency, markup_mode, markup_pct, logistics_tracking_code } = req.body;
     const fields = [], params = [];
     if (buyer_name !== undefined) { fields.push("buyer_name=?"); params.push(buyer_name); }
     if (fee_pct !== undefined) { fields.push("fee_pct=?"); params.push(fee_pct); }
     if (urgency !== undefined) { fields.push("urgency=?"); params.push(urgency); }
+    if (markup_mode !== undefined) { fields.push("markup_mode=?"); params.push(markup_mode); }
+    if (markup_pct !== undefined) { fields.push("markup_pct=?"); params.push(markup_pct); }
+    if (logistics_tracking_code !== undefined) { fields.push("logistics_tracking_code=?"); params.push(logistics_tracking_code); }
     if (fields.length) {
       params.push(req.params.id);
       db.prepare(`UPDATE orders SET ${fields.join(", ")} WHERE id=?`).run(...params);
@@ -237,9 +255,9 @@ module.exports = function (io) {
     if (!order) return res.status(404).json({ error: "not found" });
     const wasFinal = order.pipeline_status === "sampai_tujuan";
 
-    // when the buyer actually pays, re-lock the FX rate to today's rate (payment-day pricing)
+    // when the buyer actually pays, re-lock the FX rate to today's rate (payment-day pricing) and stamp payment date
     if (pipeline_status === "sudah_bayar" && order.pipeline_status !== "sudah_bayar") {
-      db.prepare("UPDATE orders SET fx_rate=? WHERE id=?").run(getFxRate(), req.params.id);
+      db.prepare("UPDATE orders SET fx_rate=?, payment_date=date('now') WHERE id=?").run(getFxRate(), req.params.id);
     }
 
     db.prepare("UPDATE orders SET pipeline_status=? WHERE id=?").run(pipeline_status, req.params.id);
@@ -294,40 +312,45 @@ module.exports = function (io) {
     const bookingFee = revenue * 0.05;
     const margin = revenue - c;
 
+    const PREFIX = { only_booking: "Booking", custom_itinerary: "Itinerary", bigbus: "BBT", private: "PT" };
+    const existingInCategory = db.prepare("SELECT COUNT(*) c FROM tours WHERE tour_category=?").get(category).c;
+    const invoiceNumber = `${PREFIX[category] || "Tour"}${existingInCategory + 1}`;
+
     const info = db.prepare(`
       INSERT INTO tours (
         tour_type, tier_name, pax_or_days, revenue, cost, margin, booking_fee, status,
         client_name, travel_date, pax_adults, pax_children, pax_infants, pax_elderly, amount_client_pays,
-        tour_category, date_from, date_to, days, destinations
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        tour_category, date_from, date_to, days, destinations, invoice_number
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
       category, tier_name || "", pax_or_days || 0, revenue, c, margin, bookingFee, status || "open",
       client_name || "", date_from || "", pax_adults || 0, pax_children || 0, pax_infants || 0, pax_elderly || 0, Number(amount_client_pays) || 0,
-      category, date_from || "", date_to || "", days || 0, destinations || ""
+      category, date_from || "", date_to || "", days || 0, destinations || "", invoiceNumber
     );
 
     emit();
 
     if ((status || "open") === "completed") {
+      db.prepare("UPDATE tours SET payment_date=date('now') WHERE id=?").run(info.lastInsertRowid);
       const fx = getFxRate(); // IDR per RMB
       const marginRmb = margin / fx;
       db.prepare("INSERT INTO transactions (kind, category, amount_rmb, source, note) VALUES (?,?,?,?,?)")
-        .run("income", "Guangzhou Mate Tour Revenue", marginRmb, "business", `Tour #${info.lastInsertRowid} (${tier_name || category}) - ${margin.toLocaleString()} IDR @ ${fx}`);
+        .run("income", "Guangzhou Mate Tour Revenue", marginRmb, "business", `Tour #${invoiceNumber} - ${margin.toLocaleString()} IDR @ ${fx}`);
       emitBudget();
     }
 
-    res.json({ id: info.lastInsertRowid, revenue, margin, booking_fee: bookingFee });
+    res.json({ id: info.lastInsertRowid, revenue, margin, booking_fee: bookingFee, invoice_number: invoiceNumber });
   });
 
   router.put("/tours/:id/complete", (req, res) => {
     const tour = db.prepare("SELECT * FROM tours WHERE id=?").get(req.params.id);
     if (!tour) return res.status(404).json({ error: "not found" });
-    db.prepare("UPDATE tours SET status='completed' WHERE id=?").run(req.params.id);
+    db.prepare("UPDATE tours SET status='completed', payment_date=date('now') WHERE id=?").run(req.params.id);
     if (tour.status !== "completed") {
       const fx = getFxRate();
       const marginRmb = tour.margin / fx;
       db.prepare("INSERT INTO transactions (kind, category, amount_rmb, source, note) VALUES (?,?,?,?,?)")
-        .run("income", "Guangzhou Mate Tour Revenue", marginRmb, "business", `Tour #${tour.id} (${tour.tier_name}) - ${tour.margin.toLocaleString()} IDR @ ${fx}`);
+        .run("income", "Guangzhou Mate Tour Revenue", marginRmb, "business", `Tour #${tour.invoice_number || tour.id} - ${tour.margin.toLocaleString()} IDR @ ${fx}`);
       emitBudget();
     }
     emit();
