@@ -67,17 +67,18 @@ module.exports = function (io) {
     let ingredients = [];
     try { ingredients = JSON.parse(ingredients_json || "[]"); } catch (e) {}
     const totalCost = ingredients.reduce((s, ing) => s + (Number(ing.cost) || 0), 0);
+    const totalCalories = ingredients.reduce((s, ing) => s + (Number(ing.calories) || 0), 0);
 
     const group = recipe_group || `${name}-${Date.now()}`;
     const prevMax = db.prepare("SELECT MAX(version) mv FROM recipes WHERE recipe_group=?").get(group).mv || 0;
 
     const info = db.prepare(`
-      INSERT INTO recipes (recipe_group, name, category, ingredients_json, unit_cost, total_cost, instructions, prep_time, shelf_life, storage_method, version)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)
-    `).run(group, name, category || "food", JSON.stringify(ingredients), totalCost, totalCost, instructions || "", prep_time || "", shelf_life || "", storage_method || "", prevMax + 1);
+      INSERT INTO recipes (recipe_group, name, category, ingredients_json, unit_cost, total_cost, total_calories, instructions, prep_time, shelf_life, storage_method, version)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(group, name, category || "food", JSON.stringify(ingredients), totalCost, totalCost, totalCalories, instructions || "", prep_time || "", shelf_life || "", storage_method || "", prevMax + 1);
 
     emit();
-    res.json({ id: info.lastInsertRowid, recipe_group: group, version: prevMax + 1, total_cost: totalCost });
+    res.json({ id: info.lastInsertRowid, recipe_group: group, version: prevMax + 1, total_cost: totalCost, total_calories: totalCalories });
   });
 
   router.delete("/recipes/:id", (req, res) => {

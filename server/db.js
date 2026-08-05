@@ -358,6 +358,13 @@ CREATE TABLE IF NOT EXISTS bathroom_log (
 );
 `);
 try { db.exec("ALTER TABLE health_logs ADD COLUMN grocery_grams REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE food_items ADD COLUMN grams_per_piece REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE food_items ADD COLUMN grams_per_ml REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE recipes ADD COLUMN total_calories REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE menu_ingredients ADD COLUMN calories REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE menu_ingredients ADD COLUMN protein REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE menu_ingredients ADD COLUMN fat REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE menu_ingredients ADD COLUMN carbs REAL"); } catch (e) {}
 try { db.exec("ALTER TABLE bathroom_log ADD COLUMN stool_type TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE bathroom_log ADD COLUMN pee_color TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE grocery_prices ADD COLUMN total_weight_g REAL"); } catch (e) {}

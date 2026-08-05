@@ -116,7 +116,10 @@ async function refreshAll() {
     <div class="row"><span class="label">Activity level</span><span class="val">${person.activity_level}</span></div>
     ${person.goal_weight_kg ? `<div class="row"><span class="label">Goal</span><span class="val">${person.goal_weight_kg}kg by ${person.goal_date || '—'}</span></div>` : ''}
     ${person.no_red_meat || person.gluten_free || person.dairy_free || person.soy_free ? `<div class="meta">${[person.no_red_meat&&'no red meat', person.gluten_free&&'gluten-free', person.dairy_free&&'dairy-free', person.soy_free&&'soy-free'].filter(Boolean).join(' · ')}</div>` : ''}
-    <button class="small secondary" style="margin-top:8px;" onclick="openUpdatePerson()">Update body info / goal weight</button>
+    <div class="grid2" style="margin-top:8px;">
+      <button class="small secondary" onclick="openUpdatePerson()">Update body info</button>
+      <button class="small secondary" onclick="deletePerson(${person.id}, '${person.name.replace(/'/g, "\\'")}')">🗑 Delete person</button>
+    </div>
   `;
 
   await loadFoodDropdown();
@@ -169,6 +172,13 @@ async function renderFoodExclusions(containerId, excludedList) {
 }
 function collectExcludedFoods(containerId) {
   return Array.from(document.querySelectorAll(`#${containerId} .food-excl-check:not(:checked)`)).map(c => c.value);
+}
+
+async function deletePerson(id, name) {
+  if (!confirm(`Delete ${name}? This removes their profile — their logged history stays under their name but they won't appear in the person picker anymore.`)) return;
+  await NEXUS.del(`/api/people/${id}`);
+  currentPersonId = null;
+  refreshAll();
 }
 
 function openUpdatePerson() {
@@ -542,12 +552,22 @@ function addMenuIngredientRow() {
   mnIngRowCount++;
   const el = document.getElementById("mn_ingredientList");
   const row = document.createElement("div");
-  row.style.cssText = "display:grid;grid-template-columns:2fr 1fr auto;gap:6px;margin-bottom:8px;align-items:center;";
   row.innerHTML = `
-    <input type="text" class="mn-ing-name" placeholder="e.g. chicken breast" style="margin:0;" onchange="suggestMenuPortion(this)" />
-    <input type="number" class="mn-ing-grams" placeholder="grams" style="margin:0;" />
-    <button type="button" class="small secondary" onclick="this.parentElement.remove()" style="padding:8px;">✕</button>
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:6px;margin-bottom:4px;align-items:center;">
+      <input type="text" class="mn-ing-name" placeholder="e.g. chicken breast" style="margin:0;" onchange="lookupMenuIngredient(this)" />
+      <input type="number" class="mn-ing-amount" placeholder="amount" style="margin:0;" onchange="lookupMenuIngredient(this)" />
+      <select class="mn-ing-unit" style="margin:0;" onchange="lookupMenuIngredient(this)">
+        <option value="g">grams</option>
+        <option value="kg">kg</option>
+        <option value="pcs">pcs</option>
+        <option value="mL">mL</option>
+        <option value="L">litre</option>
+      </select>
+      <button type="button" class="small secondary" onclick="this.closest('div[data-row]').remove()" style="padding:8px;">✕</button>
+    </div>
+    <div class="mn-ing-preview meta" style="margin-bottom:8px;"></div>
   `;
+  row.setAttribute("data-row", "1");
   el.appendChild(row);
 }
 function resetMenuIngredients() {
@@ -556,14 +576,29 @@ function resetMenuIngredients() {
   addMenuIngredientRow();
 }
 
-async function suggestMenuPortion(nameInput) {
+async function lookupMenuIngredient(el) {
+  const row = el.closest("div[data-row]");
+  const nameInput = row.querySelector(".mn-ing-name");
+  const amountInput = row.querySelector(".mn-ing-amount");
+  const unitSelect = row.querySelector(".mn-ing-unit");
+  const preview = row.querySelector(".mn-ing-preview");
   const name = nameInput.value.trim();
-  if (!name || !currentPersonId) return;
-  try {
-    const res = await NEXUS.get(`/api/health/menu/suggest-portion?person_id=${currentPersonId}&food_name=${encodeURIComponent(name)}`);
-    const gramsInput = nameInput.parentElement.querySelector(".mn-ing-grams");
-    if (!gramsInput.value) gramsInput.value = res.suggested_grams;
-  } catch (e) { /* food not in database — leave blank for manual entry */ }
+  const amount = amountInput.value;
+  if (!name || !amount) { preview.innerHTML = ""; return; }
+
+  const res = await NEXUS.get(`/api/health/nutrition-lookup?food_name=${encodeURIComponent(name)}&amount=${amount}&unit=${unitSelect.value}`);
+  if (!res.found) {
+    preview.innerHTML = `<span style="color:#B7791F;">${res.note}</span>`;
+  } else if (res.needsGrams) {
+    preview.innerHTML = `<span style="color:#B7791F;">${res.note}</span>`;
+  } else {
+    row.dataset.grams = res.grams_equivalent;
+    row.dataset.calories = res.calories;
+    row.dataset.protein = res.protein;
+    row.dataset.fat = res.fat;
+    row.dataset.carbs = res.carbs;
+    preview.innerHTML = `✅ ${res.matched_food}: ${res.grams_equivalent}g — ${res.calories} kcal · P${res.protein}g F${res.fat}g C${res.carbs}g`;
+  }
 }
 
 async function openMenuSheet() {
@@ -586,9 +621,13 @@ async function submitMenu() {
   const menu_name = document.getElementById("mn_name").value.trim();
   if (!menu_name) { alert("Enter a menu name."); return; }
   const people = Array.from(document.querySelectorAll(".mn-person-check:checked")).map(c => c.value);
-  const ingredients = Array.from(document.querySelectorAll("#mn_ingredientList > div")).map(row => ({
+  const ingredients = Array.from(document.querySelectorAll("#mn_ingredientList > div[data-row]")).map(row => ({
     name: row.querySelector(".mn-ing-name").value.trim(),
-    grams: row.querySelector(".mn-ing-grams").value,
+    grams: row.dataset.grams || row.querySelector(".mn-ing-amount").value,
+    calories: row.dataset.calories || null,
+    protein: row.dataset.protein || null,
+    fat: row.dataset.fat || null,
+    carbs: row.dataset.carbs || null,
   })).filter(i => i.name);
 
   await NEXUS.post("/api/health/menu", { log_date, meal_slot, menu_name, people, ingredients });
@@ -639,7 +678,7 @@ async function loadWeeklyMenuTable() {
       return `
         <div style="border-top:1px solid #EEE; padding-top:8px; margin-top:8px;">
           <div class="row"><span class="label"><strong>${m.meal_slot}: ${m.menu_name}</strong></span><button class="small secondary" onclick="deleteMenu(${m.id})">✕</button></div>
-          <div class="meta">${m.ingredients.map(i => `${i.name} (${i.grams}g)`).join(', ')}</div>
+          <div class="meta">${m.ingredients.map(i => `${i.name} (${i.grams}g${i.calories ? ', '+i.calories+'kcal' : ''})`).join(', ')}</div>
           <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;">${peopleHtml}</div>
         </div>
       `;

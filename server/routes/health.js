@@ -325,8 +325,10 @@ module.exports = function (io) {
       peopleList.forEach((p) => stmt.run(menuId, p));
     }
     if (Array.isArray(ingredients)) {
-      const stmt = db.prepare("INSERT INTO menu_ingredients (menu_id, name, grams) VALUES (?,?,?)");
-      ingredients.forEach((i) => { if (i.name) stmt.run(menuId, i.name, Number(i.grams) || 0); });
+      const stmt = db.prepare("INSERT INTO menu_ingredients (menu_id, name, grams, calories, protein, fat, carbs) VALUES (?,?,?,?,?,?,?)");
+      ingredients.forEach((i) => {
+        if (i.name) stmt.run(menuId, i.name, Number(i.grams) || 0, i.calories || null, i.protein || null, i.fat || null, i.carbs || null);
+      });
     }
     emit();
     res.json({ id: menuId });
@@ -399,6 +401,42 @@ module.exports = function (io) {
       return res.json({ suggested_grams: grams, note: `~25% of daily protein target from ${food_name}` });
     }
     res.json({ suggested_grams: 150, note: "Standard serving size" });
+  });
+
+  // convert amount+unit to grams, then look up nutrition from the food database (case-insensitive partial match)
+  router.get("/nutrition-lookup", (req, res) => {
+    const { food_name, amount, unit } = req.query;
+    const amt = Number(amount) || 0;
+    if (!food_name || !amt) return res.json({ found: false, note: "Enter a food name and amount." });
+
+    const food = db.prepare("SELECT * FROM food_items WHERE LOWER(name) LIKE ?").get(`%${food_name.toLowerCase()}%`);
+    if (!food) return res.json({ found: false, note: `"${food_name}" isn't in the food database yet — enter nutrition manually.` });
+
+    let grams;
+    let note = "";
+    switch (unit) {
+      case "kg": grams = amt * 1000; break;
+      case "g": grams = amt; break;
+      case "pcs":
+        if (food.grams_per_piece) { grams = amt * food.grams_per_piece; }
+        else { return res.json({ found: true, needsGrams: true, note: `No standard piece weight for ${food.name} — enter grams directly instead.` }); }
+        break;
+      case "L": grams = amt * 1000 * (food.grams_per_ml || 1); break;
+      case "mL": grams = amt * (food.grams_per_ml || 1); break;
+      default: grams = amt;
+    }
+
+    const ratio = grams / 100;
+    res.json({
+      found: true,
+      matched_food: food.name,
+      grams_equivalent: Math.round(grams * 10) / 10,
+      calories: Math.round(food.calories_per100 * ratio),
+      protein: Math.round(food.protein_per100 * ratio * 10) / 10,
+      fat: Math.round(food.fat_per100 * ratio * 10) / 10,
+      carbs: Math.round(food.carbs_per100 * ratio * 10) / 10,
+      fiber: Math.round(food.fiber_per100 * ratio * 10) / 10,
+    });
   });
 
   return router;

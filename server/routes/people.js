@@ -4,28 +4,50 @@ const db = require("../db");
 // Food composition database (per 100g, raw/edible portion, standard reference values)
 const FOOD_SEED = [
   // proteins
-  { name: "Chicken breast", category: "protein", calories_per100: 165, protein_per100: 31, fat_per100: 3.6, carbs_per100: 0, fiber_per100: 0 },
-  { name: "Pork (lean)", category: "protein", calories_per100: 242, protein_per100: 27, fat_per100: 14, carbs_per100: 0, fiber_per100: 0 },
-  { name: "Beef (lean)", category: "protein", calories_per100: 250, protein_per100: 26, fat_per100: 15, carbs_per100: 0, fiber_per100: 0 },
-  { name: "Fish (salmon)", category: "protein", calories_per100: 208, protein_per100: 20, fat_per100: 13, carbs_per100: 0, fiber_per100: 0 },
-  { name: "Fish (white, e.g. tilapia)", category: "protein", calories_per100: 96, protein_per100: 20, fat_per100: 1.7, carbs_per100: 0, fiber_per100: 0 },
-  { name: "Egg", category: "protein", calories_per100: 155, protein_per100: 13, fat_per100: 11, carbs_per100: 1.1, fiber_per100: 0 },
-  { name: "Tofu", category: "protein", calories_per100: 76, protein_per100: 8, fat_per100: 4.8, carbs_per100: 1.9, fiber_per100: 0.3 },
-  { name: "Shrimp", category: "protein", calories_per100: 99, protein_per100: 24, fat_per100: 0.3, carbs_per100: 0.2, fiber_per100: 0 },
+  { name: "Chicken breast", category: "protein", calories_per100: 165, protein_per100: 31, fat_per100: 3.6, carbs_per100: 0, fiber_per100: 0, grams_per_piece: null },
+  { name: "Chicken thigh", category: "protein", calories_per100: 209, protein_per100: 26, fat_per100: 11, carbs_per100: 0, fiber_per100: 0, grams_per_piece: null },
+  { name: "Pork (lean)", category: "protein", calories_per100: 242, protein_per100: 27, fat_per100: 14, carbs_per100: 0, fiber_per100: 0, grams_per_piece: null },
+  { name: "Beef (lean)", category: "protein", calories_per100: 250, protein_per100: 26, fat_per100: 15, carbs_per100: 0, fiber_per100: 0, grams_per_piece: null },
+  { name: "Fish (salmon)", category: "protein", calories_per100: 208, protein_per100: 20, fat_per100: 13, carbs_per100: 0, fiber_per100: 0, grams_per_piece: null },
+  { name: "Fish (white, e.g. tilapia)", category: "protein", calories_per100: 96, protein_per100: 20, fat_per100: 1.7, carbs_per100: 0, fiber_per100: 0, grams_per_piece: null },
+  { name: "Egg", category: "protein", calories_per100: 155, protein_per100: 13, fat_per100: 11, carbs_per100: 1.1, fiber_per100: 0, grams_per_piece: 50 },
+  { name: "Tofu", category: "protein", calories_per100: 76, protein_per100: 8, fat_per100: 4.8, carbs_per100: 1.9, fiber_per100: 0.3, grams_per_piece: null },
+  { name: "Shrimp", category: "protein", calories_per100: 99, protein_per100: 24, fat_per100: 0.3, carbs_per100: 0.2, fiber_per100: 0, grams_per_piece: 8 },
+  { name: "Duck", category: "protein", calories_per100: 337, protein_per100: 19, fat_per100: 28, carbs_per100: 0, fiber_per100: 0, grams_per_piece: null },
+  { name: "Squid", category: "protein", calories_per100: 92, protein_per100: 16, fat_per100: 1.4, carbs_per100: 3.1, fiber_per100: 0, grams_per_piece: null },
+  { name: "Tempeh", category: "protein", calories_per100: 193, protein_per100: 19, fat_per100: 11, carbs_per100: 9, fiber_per100: 9, grams_per_piece: null },
   // carbs
-  { name: "White rice (cooked)", category: "carb", calories_per100: 130, protein_per100: 2.7, fat_per100: 0.3, carbs_per100: 28, fiber_per100: 0.4 },
-  { name: "Three-color rice (cooked)", category: "carb", calories_per100: 123, protein_per100: 3, fat_per100: 1, carbs_per100: 25, fiber_per100: 2 },
-  { name: "Potato (boiled)", category: "carb", calories_per100: 87, protein_per100: 2, fat_per100: 0.1, carbs_per100: 17, fiber_per100: 2.2 },
-  { name: "Oatmeal (dry)", category: "carb", calories_per100: 389, protein_per100: 13, fat_per100: 7, carbs_per100: 66, fiber_per100: 10 },
-  { name: "Sweet potato (boiled)", category: "carb", calories_per100: 90, protein_per100: 2, fat_per100: 0.2, carbs_per100: 21, fiber_per100: 3 },
+  { name: "White rice (cooked)", category: "carb", calories_per100: 130, protein_per100: 2.7, fat_per100: 0.3, carbs_per100: 28, fiber_per100: 0.4, grams_per_piece: null },
+  { name: "Three-color rice (cooked)", category: "carb", calories_per100: 123, protein_per100: 3, fat_per100: 1, carbs_per100: 25, fiber_per100: 2, grams_per_piece: null },
+  { name: "Potato (boiled)", category: "carb", calories_per100: 87, protein_per100: 2, fat_per100: 0.1, carbs_per100: 17, fiber_per100: 2.2, grams_per_piece: 170 },
+  { name: "Oatmeal (dry)", category: "carb", calories_per100: 389, protein_per100: 13, fat_per100: 7, carbs_per100: 66, fiber_per100: 10, grams_per_piece: null },
+  { name: "Sweet potato (boiled)", category: "carb", calories_per100: 90, protein_per100: 2, fat_per100: 0.2, carbs_per100: 21, fiber_per100: 3, grams_per_piece: 130 },
+  { name: "Noodles (cooked)", category: "carb", calories_per100: 138, protein_per100: 4.5, fat_per100: 0.9, carbs_per100: 25, fiber_per100: 1.3, grams_per_piece: null },
+  { name: "Bread (white)", category: "carb", calories_per100: 265, protein_per100: 9, fat_per100: 3.2, carbs_per100: 49, fiber_per100: 2.7, grams_per_piece: 30 },
+  { name: "Corn", category: "carb", calories_per100: 96, protein_per100: 3.4, fat_per100: 1.5, carbs_per100: 21, fiber_per100: 2.4, grams_per_piece: 90 },
   // veggies
-  { name: "Mixed vegetables", category: "veggie", calories_per100: 35, protein_per100: 2, fat_per100: 0.3, carbs_per100: 6, fiber_per100: 2.5 },
-  { name: "Spinach", category: "veggie", calories_per100: 23, protein_per100: 2.9, fat_per100: 0.4, carbs_per100: 3.6, fiber_per100: 2.2 },
-  { name: "Broccoli", category: "veggie", calories_per100: 34, protein_per100: 2.8, fat_per100: 0.4, carbs_per100: 7, fiber_per100: 2.6 },
+  { name: "Mixed vegetables", category: "veggie", calories_per100: 35, protein_per100: 2, fat_per100: 0.3, carbs_per100: 6, fiber_per100: 2.5, grams_per_piece: null },
+  { name: "Spinach", category: "veggie", calories_per100: 23, protein_per100: 2.9, fat_per100: 0.4, carbs_per100: 3.6, fiber_per100: 2.2, grams_per_piece: null },
+  { name: "Broccoli", category: "veggie", calories_per100: 34, protein_per100: 2.8, fat_per100: 0.4, carbs_per100: 7, fiber_per100: 2.6, grams_per_piece: null },
+  { name: "Lettuce", category: "veggie", calories_per100: 15, protein_per100: 1.4, fat_per100: 0.2, carbs_per100: 2.9, fiber_per100: 1.3, grams_per_piece: null },
+  { name: "Cabbage", category: "veggie", calories_per100: 25, protein_per100: 1.3, fat_per100: 0.1, carbs_per100: 5.8, fiber_per100: 2.5, grams_per_piece: null },
+  { name: "Carrot", category: "veggie", calories_per100: 41, protein_per100: 0.9, fat_per100: 0.2, carbs_per100: 10, fiber_per100: 2.8, grams_per_piece: 60 },
+  { name: "Tomato", category: "veggie", calories_per100: 18, protein_per100: 0.9, fat_per100: 0.2, carbs_per100: 3.9, fiber_per100: 1.2, grams_per_piece: 120 },
+  { name: "Cucumber", category: "veggie", calories_per100: 15, protein_per100: 0.7, fat_per100: 0.1, carbs_per100: 3.6, fiber_per100: 0.5, grams_per_piece: 300 },
+  { name: "Mushroom", category: "veggie", calories_per100: 22, protein_per100: 3.1, fat_per100: 0.3, carbs_per100: 3.3, fiber_per100: 1, grams_per_piece: null },
   // fruits
-  { name: "Mixed fruit", category: "fruit", calories_per100: 52, protein_per100: 0.5, fat_per100: 0.2, carbs_per100: 13, fiber_per100: 2 },
-  { name: "Banana", category: "fruit", calories_per100: 89, protein_per100: 1.1, fat_per100: 0.3, carbs_per100: 23, fiber_per100: 2.6 },
-  { name: "Apple", category: "fruit", calories_per100: 52, protein_per100: 0.3, fat_per100: 0.2, carbs_per100: 14, fiber_per100: 2.4 },
+  { name: "Mixed fruit", category: "fruit", calories_per100: 52, protein_per100: 0.5, fat_per100: 0.2, carbs_per100: 13, fiber_per100: 2, grams_per_piece: null },
+  { name: "Banana", category: "fruit", calories_per100: 89, protein_per100: 1.1, fat_per100: 0.3, carbs_per100: 23, fiber_per100: 2.6, grams_per_piece: 118 },
+  { name: "Apple", category: "fruit", calories_per100: 52, protein_per100: 0.3, fat_per100: 0.2, carbs_per100: 14, fiber_per100: 2.4, grams_per_piece: 182 },
+  { name: "Orange", category: "fruit", calories_per100: 47, protein_per100: 0.9, fat_per100: 0.1, carbs_per100: 12, fiber_per100: 2.4, grams_per_piece: 130 },
+  { name: "Mango", category: "fruit", calories_per100: 60, protein_per100: 0.8, fat_per100: 0.4, carbs_per100: 15, fiber_per100: 1.6, grams_per_piece: 200 },
+  { name: "Watermelon", category: "fruit", calories_per100: 30, protein_per100: 0.6, fat_per100: 0.2, carbs_per100: 8, fiber_per100: 0.4, grams_per_piece: null },
+  // dairy / fats / liquids (support litre/ml)
+  { name: "Milk (dairy)", category: "other", calories_per100: 61, protein_per100: 3.2, fat_per100: 3.3, carbs_per100: 4.8, fiber_per100: 0, grams_per_ml: 1.03 },
+  { name: "Soy milk", category: "other", calories_per100: 33, protein_per100: 2.9, fat_per100: 1.6, carbs_per100: 1.8, fiber_per100: 0.4, grams_per_ml: 1.01 },
+  { name: "Cooking oil", category: "other", calories_per100: 884, protein_per100: 0, fat_per100: 100, carbs_per100: 0, fiber_per100: 0, grams_per_ml: 0.92 },
+  { name: "Soy sauce", category: "other", calories_per100: 53, protein_per100: 8, fat_per100: 0.1, carbs_per100: 4.9, fiber_per100: 0.8, grams_per_ml: 1.1 },
+  { name: "Coconut milk", category: "other", calories_per100: 230, protein_per100: 2.3, fat_per100: 24, carbs_per100: 5.5, fiber_per100: 2.2, grams_per_ml: 0.97 },
 ];
 
 const ACTIVITY_FACTORS = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, very_active: 1.9 };
@@ -147,12 +169,14 @@ module.exports = function (io) {
   const router = express.Router();
   const emit = () => io.emit("data:change", { module: "people" });
 
-  // seed food database once
-  const existingFoods = db.prepare("SELECT COUNT(*) c FROM food_items").get().c;
-  if (existingFoods === 0) {
-    const stmt = db.prepare(`INSERT INTO food_items (name, category, calories_per100, protein_per100, fat_per100, carbs_per100, fiber_per100) VALUES (?,?,?,?,?,?,?)`);
-    FOOD_SEED.forEach((f) => stmt.run(f.name, f.category, f.calories_per100, f.protein_per100, f.fat_per100, f.carbs_per100, f.fiber_per100));
-  }
+  // seed food database — insert any foods not already present (handles both fresh DBs and adding new items to existing ones)
+  const existingNames = new Set(db.prepare("SELECT name FROM food_items").all().map((r) => r.name));
+  const stmt = db.prepare(`INSERT INTO food_items (name, category, calories_per100, protein_per100, fat_per100, carbs_per100, fiber_per100, grams_per_piece, grams_per_ml) VALUES (?,?,?,?,?,?,?,?,?)`);
+  FOOD_SEED.forEach((f) => {
+    if (!existingNames.has(f.name)) {
+      stmt.run(f.name, f.category, f.calories_per100, f.protein_per100, f.fat_per100, f.carbs_per100, f.fiber_per100, f.grams_per_piece || null, f.grams_per_ml || null);
+    }
+  });
 
   router.get("/foods", (req, res) => {
     const { category } = req.query;

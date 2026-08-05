@@ -1255,8 +1255,8 @@ async function loadRecipes() {
     return `
     <div class="card">
       <h3>${r.name} <span class="mini-tag">${r.category} · v${r.version}</span></h3>
-      <div class="meta">Total cost: ¥${r.total_cost} · Prep: ${r.prep_time || '-'} · Shelf life: ${r.shelf_life || '-'}</div>
-      ${ingredients.length ? `<div class="meta" style="margin-top:6px;">${ingredients.map(i => `${i.name} (${i.grams || 0}g${i.cost ? ', ¥'+i.cost : ''})`).join(' · ')}</div>` : ''}
+      <div class="meta">Total cost: ¥${r.total_cost} ${r.total_calories ? '· ' + r.total_calories + ' kcal' : ''} · Prep: ${r.prep_time || '-'} · Shelf life: ${r.shelf_life || '-'}</div>
+      ${ingredients.length ? `<div class="meta" style="margin-top:6px;">${ingredients.map(i => `${i.name} (${i.grams || 0}g${i.cost ? ', ¥'+i.cost : ''}${i.calories ? ', '+i.calories+'kcal' : ''})`).join(' · ')}</div>` : ''}
       <div class="meta" style="margin-top:6px;">${r.instructions || ''}</div>
     </div>
   `;
@@ -1266,13 +1266,49 @@ async function loadRecipes() {
 function addIngredientRow() {
   const el = document.getElementById("ingredientList");
   const row = document.createElement("div");
-  row.style.cssText = "display:grid;grid-template-columns:2fr 1fr 1fr;gap:6px;margin-bottom:8px;";
-  row.innerHTML = `<input type="text" class="ing-name" placeholder="e.g. rice" style="margin:0;" /><input type="number" class="ing-grams" placeholder="grams/pc" style="margin:0;" /><input type="number" class="ing-cost" placeholder="cost RMB" style="margin:0;" />`;
+  row.innerHTML = `
+    <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:6px;margin-bottom:4px;">
+      <input type="text" class="ing-name" placeholder="e.g. rice" style="margin:0;" onchange="lookupRecipeIngredient(this)" />
+      <input type="number" class="ing-amount" placeholder="amount" style="margin:0;" onchange="lookupRecipeIngredient(this)" />
+      <select class="ing-unit" style="margin:0;" onchange="lookupRecipeIngredient(this)">
+        <option value="g">grams</option>
+        <option value="kg">kg</option>
+        <option value="pcs">pcs</option>
+        <option value="mL">mL</option>
+        <option value="L">litre</option>
+      </select>
+      <input type="number" class="ing-cost" placeholder="cost RMB" style="margin:0;" />
+    </div>
+    <div class="ing-preview meta" style="margin-bottom:8px;"></div>
+  `;
+  row.setAttribute("data-row", "1");
   el.appendChild(row);
 }
 function resetIngredientList() {
   document.getElementById("ingredientList").innerHTML = "";
   addIngredientRow();
+}
+
+async function lookupRecipeIngredient(el) {
+  const row = el.closest("div[data-row]");
+  const name = row.querySelector(".ing-name").value.trim();
+  const amount = row.querySelector(".ing-amount").value;
+  const unit = row.querySelector(".ing-unit").value;
+  const preview = row.querySelector(".ing-preview");
+  if (!name || !amount) { preview.innerHTML = ""; return; }
+
+  const res = await NEXUS.get(`/api/health/nutrition-lookup?food_name=${encodeURIComponent(name)}&amount=${amount}&unit=${unit}`);
+  if (!res.found || res.needsGrams) {
+    preview.innerHTML = `<span style="color:#B7791F;">${res.note}</span>`;
+    delete row.dataset.grams;
+  } else {
+    row.dataset.grams = res.grams_equivalent;
+    row.dataset.calories = res.calories;
+    row.dataset.protein = res.protein;
+    row.dataset.fat = res.fat;
+    row.dataset.carbs = res.carbs;
+    preview.innerHTML = `✅ ${res.matched_food}: ${res.grams_equivalent}g — ${res.calories} kcal · P${res.protein}g F${res.fat}g C${res.carbs}g`;
+  }
 }
 
 async function submitRecipe() {
@@ -1284,10 +1320,14 @@ async function submitRecipe() {
   const storage_method = document.getElementById("r_storage").value.trim();
   if (!name) { alert("Name is required."); return; }
 
-  const ingredients = Array.from(document.querySelectorAll("#ingredientList > div")).map(row => ({
+  const ingredients = Array.from(document.querySelectorAll("#ingredientList > div[data-row]")).map(row => ({
     name: row.querySelector(".ing-name").value.trim(),
-    grams: Number(row.querySelector(".ing-grams").value) || 0,
+    grams: Number(row.dataset.grams || row.querySelector(".ing-amount").value) || 0,
     cost: Number(row.querySelector(".ing-cost").value) || 0,
+    calories: row.dataset.calories ? Number(row.dataset.calories) : null,
+    protein: row.dataset.protein ? Number(row.dataset.protein) : null,
+    fat: row.dataset.fat ? Number(row.dataset.fat) : null,
+    carbs: row.dataset.carbs ? Number(row.dataset.carbs) : null,
   })).filter(i => i.name);
 
   await NEXUS.post("/api/indocha/recipes", { name, category, ingredients_json: JSON.stringify(ingredients), instructions, prep_time, shelf_life, storage_method });
