@@ -477,6 +477,10 @@ try { db.exec("ALTER TABLE tours ADD COLUMN price_per_unit_cache REAL DEFAULT 0"
 // Contact Info: email address
 try { db.exec("ALTER TABLE clients ADD COLUMN email TEXT"); } catch (e) {}
 
+// logistics provider selection for invoices (Track A and Track B)
+try { db.exec("ALTER TABLE orders ADD COLUMN logistics_id INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE track_b_orders ADD COLUMN logistics_id INTEGER"); } catch (e) {}
+
 // People: weight goal + target date, water target
 try { db.exec("ALTER TABLE people ADD COLUMN goal_weight_kg REAL"); } catch (e) {}
 try { db.exec("ALTER TABLE people ADD COLUMN goal_date TEXT"); } catch (e) {}

@@ -154,7 +154,7 @@ module.exports = function (io) {
       cost_price, cost_currency, selling_price, selling_currency,
       freight, freight_currency, insurance, insurance_currency,
       vat, vat_currency, misc_fees, misc_currency, payment_method, status,
-      price_per_kg_idr, price_per_kg_rmb, bank_account_id, team_member_id,
+      price_per_kg_idr, price_per_kg_rmb, bank_account_id, team_member_id, logistics_id,
     } = req.body;
 
     let product_summary = "";
@@ -173,15 +173,15 @@ module.exports = function (io) {
         freight, freight_currency, insurance, insurance_currency,
         vat, vat_currency, misc_fees, misc_currency,
         payment_method, status, pipeline_status, fx_rate, invoice_number,
-        price_per_kg_idr, price_per_kg_rmb, bank_account_id, team_member_id
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'just_order',?,?,?,?,?,?)
+        price_per_kg_idr, price_per_kg_rmb, bank_account_id, team_member_id, logistics_id
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'just_order',?,?,?,?,?,?,?)
     `).run(
       buyer_name, product_summary, catalog_product_id || null, profit_model, fee_rate || 0,
       cost_price || 0, cost_currency || "RMB", selling_price || 0, selling_currency || "RMB",
       freight || 0, freight_currency || "RMB", insurance || 0, insurance_currency || "RMB",
       vat || 0, vat_currency || "RMB", misc_fees || 0, misc_currency || "RMB",
       payment_method || "", status || "open", getFxRate(), invoiceNumber,
-      price_per_kg_idr || null, price_per_kg_rmb || null, bank_account_id || null, team_member_id || null
+      price_per_kg_idr || null, price_per_kg_rmb || null, bank_account_id || null, team_member_id || null, logistics_id || null
     );
 
     const totals = recomputeTrackB(info.lastInsertRowid);

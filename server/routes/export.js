@@ -13,7 +13,7 @@ const GRAY = "#666666";
 const LIGHT = "#F4F6F6";
 
 // shared professional invoice header — used by every service type
-function drawInvoiceHeader(doc, { companySuffix, serviceName, invoiceNumber, orderDate, paymentDate, trackingCode, logisticsTrackingCode, billTo }) {
+function drawInvoiceHeader(doc, { companySuffix, serviceName, invoiceNumber, orderDate, paymentDate, trackingCode, logisticsTrackingCode, billTo, logisticsProvider }) {
   // top color band
   doc.rect(0, 0, doc.page.width, 90).fill(NAVY);
   doc.fillColor("#FFFFFF").fontSize(22).font("Helvetica-Bold").text(`NEXUS - ${companySuffix}`, 50, 28);
@@ -30,10 +30,13 @@ function drawInvoiceHeader(doc, { companySuffix, serviceName, invoiceNumber, ord
   if (trackingCode !== undefined) {
     doc.text(`Tracking code (ours): ${trackingCode || "-"}`, 50, y);
     doc.text(`Tracking code (logistics): ${logisticsTrackingCode || "-"}`, 300, y);
-    y += 22;
-  } else {
-    y += 6;
+    y += 16;
   }
+  if (logisticsProvider) {
+    doc.text(`Logistics provider: ${logisticsProvider}`, 50, y);
+    y += 16;
+  }
+  y += 6;
 
   doc.moveTo(50, y).lineTo(doc.page.width - 50, y).strokeColor("#DDDDDD").stroke();
   y += 14;
@@ -85,6 +88,8 @@ module.exports = function () {
     const doc = new PDFDocument({ margin: 50, size: "A4" });
     doc.pipe(res);
 
+    const logisticsProvider = order.logistics_id ? db.prepare("SELECT * FROM clients WHERE id=?").get(order.logistics_id) : null;
+
     let y = drawInvoiceHeader(doc, {
       companySuffix: "NADYLAN",
       serviceName: "Sourcing Invoice",
@@ -94,6 +99,7 @@ module.exports = function () {
       trackingCode: order.tracking_code,
       logisticsTrackingCode: order.logistics_tracking_code,
       billTo: order.buyer_name,
+      logisticsProvider: logisticsProvider ? (logisticsProvider.company_name || logisticsProvider.person_name) : null,
     });
 
     // product table — when a markup is active, scale displayed item prices by the same ratio
@@ -420,6 +426,7 @@ module.exports = function () {
     const bankAccount = o.bank_account_id ? db.prepare("SELECT * FROM bank_accounts WHERE id=?").get(o.bank_account_id) : null;
     const teamMember = o.team_member_id ? db.prepare("SELECT * FROM clients WHERE id=?").get(o.team_member_id) : null;
     const bank = bankAccount || { bank_name: cfg.bank_name, account_name: cfg.bank_account_name, account_number: cfg.bank_account_number };
+    const logisticsProvider = o.logistics_id ? db.prepare("SELECT * FROM clients WHERE id=?").get(o.logistics_id) : null;
 
     const line = (label, value) => new Paragraph({
       children: [
@@ -446,7 +453,8 @@ module.exports = function () {
           new Paragraph({ children: [new TextRun({ text: "NEXUS - NADYLAN", bold: true, size: 32, color: "1F3864" })] }),
           new Paragraph({ children: [new TextRun({ text: "供货发票 (Sourcing Invoice)", size: 22, color: "0F6E6E" })], spacing: { after: 200 } }),
           new Paragraph({ children: [new TextRun({ text: `订单号 Order #${o.invoice_number || o.id}`, bold: true })] }),
-          new Paragraph({ text: `日期 Date: ${o.created_at ? o.created_at.slice(0, 10) : "-"}    付款日期 Payment date: ${o.payment_date || "-"}`, spacing: { after: 200 } }),
+          new Paragraph({ text: `日期 Date: ${o.created_at ? o.created_at.slice(0, 10) : "-"}    付款日期 Payment date: ${o.payment_date || "-"}`, spacing: { after: logisticsProvider ? 80 : 200 } }),
+          ...(logisticsProvider ? [new Paragraph({ text: `物流 Logistics: ${logisticsProvider.company_name || logisticsProvider.person_name}`, spacing: { after: 200 } })] : []),
           new Paragraph({ children: [new TextRun({ text: "买方 BILL TO", bold: true, color: "666666", size: 18 })] }),
           new Paragraph({ children: [new TextRun({ text: o.buyer_name, bold: true, size: 24 })], spacing: { after: 200 } }),
           ...lines,

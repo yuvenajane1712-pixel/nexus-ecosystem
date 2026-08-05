@@ -172,21 +172,21 @@ module.exports = function (io) {
 
   // create an order shell (buyer + fee); products added as line items afterward
   router.post("/orders", (req, res) => {
-    const { buyer_name, fee_pct, urgency, markup_mode, markup_pct, bank_account_id, team_member_id } = req.body;
+    const { buyer_name, fee_pct, urgency, markup_mode, markup_pct, bank_account_id, team_member_id, logistics_id } = req.body;
     if (!buyer_name) return res.status(400).json({ error: "buyer_name required" });
     const fx = getFxRate();
     const existingCount = db.prepare("SELECT COUNT(*) c FROM orders").get().c;
     const invoiceNumber = `${existingCount + 1}A`;
     const info = db.prepare(`
-      INSERT INTO orders (buyer_name, product_cost, fee_pct, logistics_cost, service_fee, total_payment, net_profit, fx_rate, urgency, status, pipeline_status, markup_mode, markup_pct, invoice_number, bank_account_id, team_member_id)
-      VALUES (?,0,?,0,0,0,0,?,?, 'open', 'lagi_dicari', ?, ?, ?, ?, ?)
-    `).run(buyer_name, fee_pct || 10, fx, urgency || 1, markup_mode || "fee", markup_pct || 0, invoiceNumber, bank_account_id || null, team_member_id || null);
+      INSERT INTO orders (buyer_name, product_cost, fee_pct, logistics_cost, service_fee, total_payment, net_profit, fx_rate, urgency, status, pipeline_status, markup_mode, markup_pct, invoice_number, bank_account_id, team_member_id, logistics_id)
+      VALUES (?,0,?,0,0,0,0,?,?, 'open', 'lagi_dicari', ?, ?, ?, ?, ?, ?)
+    `).run(buyer_name, fee_pct || 10, fx, urgency || 1, markup_mode || "fee", markup_pct || 0, invoiceNumber, bank_account_id || null, team_member_id || null, logistics_id || null);
     emit();
     res.json({ id: info.lastInsertRowid, invoice_number: invoiceNumber });
   });
 
   router.put("/orders/:id", (req, res) => {
-    const { buyer_name, fee_pct, urgency, markup_mode, markup_pct, logistics_tracking_code, bank_account_id, team_member_id } = req.body;
+    const { buyer_name, fee_pct, urgency, markup_mode, markup_pct, logistics_tracking_code, bank_account_id, team_member_id, logistics_id } = req.body;
     const fields = [], params = [];
     if (buyer_name !== undefined) { fields.push("buyer_name=?"); params.push(buyer_name); }
     if (fee_pct !== undefined) { fields.push("fee_pct=?"); params.push(fee_pct); }
@@ -196,6 +196,7 @@ module.exports = function (io) {
     if (logistics_tracking_code !== undefined) { fields.push("logistics_tracking_code=?"); params.push(logistics_tracking_code); }
     if (bank_account_id !== undefined) { fields.push("bank_account_id=?"); params.push(bank_account_id); }
     if (team_member_id !== undefined) { fields.push("team_member_id=?"); params.push(team_member_id); }
+    if (logistics_id !== undefined) { fields.push("logistics_id=?"); params.push(logistics_id || null); }
     if (fields.length) {
       params.push(req.params.id);
       db.prepare(`UPDATE orders SET ${fields.join(", ")} WHERE id=?`).run(...params);
@@ -344,9 +345,9 @@ module.exports = function (io) {
     let bookingFee = 0;
 
     if (t.tour_category === "only_booking") {
-      // list all the bookings they want (customer cost items), our fee = 5% of that total — this IS the revenue, no separate fee added
-      revenue = customerItemsTotal * 0.05;
-      bookingFee = revenue;
+      // client pays the full booking cost (what we're booking for them) PLUS our 5% service fee on top
+      bookingFee = customerItemsTotal * 0.05;
+      revenue = customerItemsTotal + bookingFee;
     } else if (t.tour_category === "custom_itinerary") {
       // days × 89,000 IDR — this IS the fee, nothing added on top
       revenue = (t.days || 0) * 89000;
@@ -363,8 +364,20 @@ module.exports = function (io) {
 
     const ourCostIdr = ourItemsTotalRmb * fx;
     const legacyCost = t.cost || 0; // manual fallback if no itemized "our cost" entries exist
-    const totalCost = ourItemsTotalRmb > 0 ? ourCostIdr : legacyCost;
-    const margin = revenue - totalCost;
+
+    let totalCost, margin;
+    if (t.tour_category === "only_booking") {
+      // the booking cost itself passes straight through to vendors — only the 5% fee is our actual profit
+      totalCost = customerItemsTotal;
+      margin = bookingFee;
+    } else if (t.tour_category === "custom_itinerary") {
+      // 89K/day is pure profit, no pass-through cost
+      totalCost = 0;
+      margin = revenue;
+    } else {
+      totalCost = ourItemsTotalRmb > 0 ? ourCostIdr : legacyCost;
+      margin = revenue - totalCost;
+    }
 
     db.prepare("UPDATE tours SET revenue=?, cost=?, margin=?, booking_fee=?, pax_or_days=? WHERE id=?")
       .run(revenue, totalCost, margin, bookingFee, totalPax || t.pax_or_days || 0, tourId);

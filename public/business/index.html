@@ -131,6 +131,7 @@
       </div>
       <button class="small secondary" style="margin-bottom:10px;" onclick="filterCRM('cn_buyer')">CN Buyers</button>
       <button class="small secondary" style="margin-bottom:10px;" onclick="filterCRM('team_member')">Our Team</button>
+      <button class="small secondary" style="margin-bottom:10px;" onclick="filterCRM('logistics')">Logistics</button>
       <div id="crmList"><div class="empty">No contacts yet</div></div>
     </section>
 
@@ -237,6 +238,8 @@
       <select id="o_bankAccount"></select>
       <label>Team member contact (shown on invoice)</label>
       <select id="o_teamMember"></select>
+      <label>Logistics provider (which logistics we use for this invoice)</label>
+      <select id="o_logistics"></select>
       <button onclick="submitOrder()">Create Order — then add products</button>
     </div>
   </div>
@@ -481,6 +484,8 @@
       <select id="b_bankAccount"></select>
       <label>Team member contact (shown on invoice)</label>
       <select id="b_teamMember"></select>
+      <label>Logistics provider (which logistics we use for this invoice)</label>
+      <select id="b_logistics"></select>
       <button onclick="submitTrackB()">Save Order</button>
     </div>
   </div>
@@ -514,6 +519,7 @@
         <option value="cn_supplier">Chinese Supplier</option>
         <option value="cn_buyer">Chinese Buyer</option>
         <option value="team_member">Our Team Member</option>
+        <option value="logistics">Logistics Provider</option>
       </select>
       <label>Company name</label>
       <input id="c_company" placeholder="e.g. CV Kopi Aceh" />

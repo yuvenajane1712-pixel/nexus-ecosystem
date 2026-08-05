@@ -486,6 +486,7 @@ function toggleMarkupFields() {
 async function loadOrderSheetDropdowns() {
   await loadCRMDropdown("o_buyer", ["id_buyer", "cn_buyer"]);
   await loadCRMDropdown("o_teamMember", ["team_member"], true);
+  await loadCRMDropdown("o_logistics", ["logistics"], true);
   const banks = await NEXUS.get("/api/bank-accounts");
   document.getElementById("o_bankAccount").innerHTML = banks.length
     ? banks.map(b => `<option value="${b.id}">${b.bank_name} — ${b.account_number}</option>`).join("")
@@ -501,9 +502,10 @@ async function submitOrder() {
   const markup_pct = document.getElementById("o_markupPct").value || 0;
   const bank_account_id = document.getElementById("o_bankAccount").value || null;
   const team_member_id = document.getElementById("o_teamMember").value || null;
+  const logistics_id = document.getElementById("o_logistics").value || null;
   if (!buyer_name) { alert("Select a buyer — add one in Contact Info first if the list is empty."); return; }
 
-  await NEXUS.post("/api/business/orders", { buyer_name, fee_pct, urgency, markup_mode, markup_pct, bank_account_id, team_member_id });
+  await NEXUS.post("/api/business/orders", { buyer_name, fee_pct, urgency, markup_mode, markup_pct, bank_account_id, team_member_id, logistics_id });
   NEXUS.closeSheet("orderSheet");
   loadOrders();
 }
@@ -889,6 +891,7 @@ async function loadTrackBProductDropdown() {
   sel.innerHTML = catalog.map(p => `<option value="${p.id}">${p.name} (${p.category})</option>`).join("");
   await loadCRMDropdown("b_buyer", ["cn_buyer"]);
   await loadCRMDropdown("b_teamMember", ["team_member"], true);
+  await loadCRMDropdown("b_logistics", ["logistics"], true);
   const banks = await NEXUS.get("/api/bank-accounts");
   document.getElementById("b_bankAccount").innerHTML = banks.length
     ? banks.map(b => `<option value="${b.id}">${b.bank_name} — ${b.account_number}</option>`).join("")
@@ -954,6 +957,7 @@ async function submitTrackB() {
   const price_per_kg_rmb = document.getElementById("b_kg_rmb").value;
   const bank_account_id = document.getElementById("b_bankAccount").value || null;
   const team_member_id = document.getElementById("b_teamMember").value || null;
+  const logistics_id = document.getElementById("b_logistics").value || null;
   if (!buyer_name || !selling_price) { alert("Buyer name and selling price are required."); return; }
 
   await NEXUS.post("/api/trackb/orders", {
@@ -961,7 +965,7 @@ async function submitTrackB() {
     cost_price, cost_currency, selling_price, selling_currency,
     freight, freight_currency, insurance, insurance_currency,
     vat, vat_currency, misc_fees, misc_currency, payment_method, status,
-    price_per_kg_idr, price_per_kg_rmb, bank_account_id, team_member_id,
+    price_per_kg_idr, price_per_kg_rmb, bank_account_id, team_member_id, logistics_id,
   });
   NEXUS.closeSheet("trackbSheet");
   ["b_cost","b_sell","b_feerate","b_freight","b_insurance","b_vat","b_misc","b_payment","b_kg_idr","b_kg_rmb"].forEach(id => document.getElementById(id).value = "");
