@@ -63,11 +63,17 @@ module.exports = function (io) {
   });
 
   router.post("/logs", (req, res) => {
-    const { user_name, log_type, title, value, calories, protein, fat, carbs, cost_rmb, grocery_grams } = req.body;
-    const info = db.prepare(`
-      INSERT INTO health_logs (user_name, log_type, title, value, calories, protein, fat, carbs, cost_rmb, grocery_grams)
-      VALUES (?,?,?,?,?,?,?,?,?,?)
-    `).run(user_name, log_type, title || "", value || "", calories || null, protein || null, fat || null, carbs || null, cost_rmb || null, grocery_grams || null);
+    const { user_name, log_type, title, value, calories, protein, fat, carbs, cost_rmb, grocery_grams, log_date, steps } = req.body;
+    const createdAt = log_date ? `${log_date} 12:00:00` : null;
+    const info = createdAt
+      ? db.prepare(`
+          INSERT INTO health_logs (user_name, log_type, title, value, calories, protein, fat, carbs, cost_rmb, grocery_grams, log_date, steps, created_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        `).run(user_name, log_type, title || "", value || "", calories || null, protein || null, fat || null, carbs || null, cost_rmb || null, grocery_grams || null, log_date, steps || null, createdAt)
+      : db.prepare(`
+          INSERT INTO health_logs (user_name, log_type, title, value, calories, protein, fat, carbs, cost_rmb, grocery_grams, steps)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        `).run(user_name, log_type, title || "", value || "", calories || null, protein || null, fat || null, carbs || null, cost_rmb || null, grocery_grams || null, steps || null);
 
     emit();
 
@@ -306,5 +312,96 @@ module.exports = function (io) {
     res.json({ eaten, burned, net: eaten - burned });
   });
 
+  // ---- daily menu planning: unlimited ingredients, per-person checklist ----
+  router.post("/menu", (req, res) => {
+    const { log_date, meal_slot, menu_name, people: peopleList, ingredients } = req.body;
+    if (!menu_name) return res.status(400).json({ error: "menu_name required" });
+    const date = log_date || new Date().toISOString().slice(0, 10);
+    const info = db.prepare("INSERT INTO daily_menus (log_date, meal_slot, menu_name) VALUES (?,?,?)").run(date, meal_slot || "dinner", menu_name);
+    const menuId = info.lastInsertRowid;
+
+    if (Array.isArray(peopleList)) {
+      const stmt = db.prepare("INSERT INTO menu_people (menu_id, person_name) VALUES (?,?)");
+      peopleList.forEach((p) => stmt.run(menuId, p));
+    }
+    if (Array.isArray(ingredients)) {
+      const stmt = db.prepare("INSERT INTO menu_ingredients (menu_id, name, grams) VALUES (?,?,?)");
+      ingredients.forEach((i) => { if (i.name) stmt.run(menuId, i.name, Number(i.grams) || 0); });
+    }
+    emit();
+    res.json({ id: menuId });
+  });
+
+  router.get("/menu", (req, res) => {
+    const { date_from, date_to } = req.query;
+    let sql = "SELECT * FROM daily_menus WHERE 1=1";
+    const params = [];
+    if (date_from) { sql += " AND log_date>=?"; params.push(date_from); }
+    if (date_to) { sql += " AND log_date<=?"; params.push(date_to); }
+    sql += " ORDER BY log_date ASC, meal_slot ASC";
+    const menus = db.prepare(sql).all(...params);
+    const people = db.prepare("SELECT * FROM menu_people").all();
+    const ingredients = db.prepare("SELECT * FROM menu_ingredients").all();
+    menus.forEach((m) => {
+      m.people = people.filter((p) => p.menu_id === m.id);
+      m.ingredients = ingredients.filter((i) => i.menu_id === m.id);
+    });
+    res.json(menus);
+  });
+
+  router.put("/menu/:id/person/:personId/eaten", (req, res) => {
+    const { eaten } = req.body;
+    db.prepare("UPDATE menu_people SET eaten=? WHERE id=?").run(eaten ? 1 : 0, req.params.personId);
+    emit();
+    res.json({ ok: true });
+  });
+
+  router.delete("/menu/:id", (req, res) => {
+    db.prepare("DELETE FROM menu_people WHERE menu_id=?").run(req.params.id);
+    db.prepare("DELETE FROM menu_ingredients WHERE menu_id=?").run(req.params.id);
+    db.prepare("DELETE FROM daily_menus WHERE id=?").run(req.params.id);
+    emit();
+    res.json({ ok: true });
+  });
+
+  // weekly grocery need per person — sums ingredient grams across all menus this week where that person is checked in
+  router.get("/menu/weekly-needs/:person", (req, res) => {
+    const dateFrom = req.query.date_from || new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+    const dateTo = req.query.date_to || new Date().toISOString().slice(0, 10);
+    const menus = db.prepare("SELECT * FROM daily_menus WHERE log_date>=? AND log_date<=?").all(dateFrom, dateTo);
+    const menuIds = menus.map((m) => m.id);
+    if (!menuIds.length) return res.json({ person: req.params.person, needs: [] });
+
+    const placeholders = menuIds.map(() => "?").join(",");
+    const peopleRows = db.prepare(`SELECT * FROM menu_people WHERE menu_id IN (${placeholders}) AND person_name=?`).all(...menuIds, req.params.person);
+    const relevantMenuIds = peopleRows.map((p) => p.menu_id);
+    if (!relevantMenuIds.length) return res.json({ person: req.params.person, needs: [] });
+
+    const ph2 = relevantMenuIds.map(() => "?").join(",");
+    const ingredients = db.prepare(`SELECT * FROM menu_ingredients WHERE menu_id IN (${ph2})`).all(...relevantMenuIds);
+    const totals = {};
+    ingredients.forEach((i) => { totals[i.name] = (totals[i.name] || 0) + i.grams; });
+    const needs = Object.entries(totals).map(([name, grams]) => ({ name, grams_needed: Math.round(grams) }));
+    res.json({ person: req.params.person, date_from: dateFrom, date_to: dateTo, needs });
+  });
+
+  // suggest a portion for an ingredient based on a person's daily macro targets (reuses the food database)
+  router.get("/menu/suggest-portion", (req, res) => {
+    const { person_id, food_name } = req.query;
+    const food = db.prepare("SELECT * FROM food_items WHERE name=?").get(food_name);
+    if (!food) return res.json({ suggested_grams: 150, note: "Food not in database — using a generic 150g default." });
+    const person = db.prepare("SELECT * FROM people WHERE id=?").get(person_id);
+    if (!person || !person.weight_kg) return res.json({ suggested_grams: 150, note: "Add this person's body info for a personalized suggestion." });
+    // rough personalized portion: aim for ~25% of daily protein target from this single food if it's a protein source
+    const proteinTarget = person.weight_kg * 1.6;
+    if (food.category === "protein" && food.protein_per100 > 0) {
+      const grams = Math.round(((proteinTarget * 0.25) / food.protein_per100) * 100);
+      return res.json({ suggested_grams: grams, note: `~25% of daily protein target from ${food_name}` });
+    }
+    res.json({ suggested_grams: 150, note: "Standard serving size" });
+  });
+
   return router;
 };
+
+

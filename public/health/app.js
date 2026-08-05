@@ -7,6 +7,7 @@ document.getElementById("fabBtn").addEventListener("click", () => NEXUS.openShee
 function openForm(id) {
   NEXUS.closeSheet("actionSheet");
   if (id === "personSheet") renderFoodExclusions("p_foodExclusions", []);
+  if (id === "workoutSheet") document.getElementById("w_date").value = new Date().toISOString().slice(0, 10);
   NEXUS.openSheet(id);
 }
 
@@ -129,6 +130,31 @@ async function refreshAll() {
   await loadWater();
   await loadCalorieBalance();
   await loadSupplements();
+  await loadWeeklyMenuTable();
+  await loadRecommendations();
+}
+
+async function loadRecommendations() {
+  const rec = await NEXUS.get(`/api/people/${currentPersonId}/recommendations`);
+  const el = document.getElementById("recommendationsBox");
+  const parts = [];
+  if (rec.matched_conditions && rec.matched_conditions.length) {
+    parts.push(`<div class="meta" style="font-weight:600;">Based on conditions mentioned in body info</div>`);
+  }
+  if (rec.macro_notes && rec.macro_notes.length) {
+    parts.push(`<div class="section-title" style="margin-top:8px;">Macro Guidance</div>` + rec.macro_notes.map(n => `<div class="meta">• ${n}</div>`).join(""));
+  }
+  if (rec.workout && rec.workout.length) {
+    parts.push(`<div class="section-title" style="margin-top:8px;">Recommended Workout</div>` + rec.workout.map(w => `<div class="meta">• ${w}</div>`).join(""));
+  }
+  if (rec.supplements && rec.supplements.length) {
+    parts.push(`<div class="section-title" style="margin-top:8px;">Suggested Supplements</div>` + rec.supplements.map(s => `<div class="meta">• ${s.name} — ${s.portion}</div>`).join(""));
+  }
+  if (rec.tcm && rec.tcm.length) {
+    parts.push(`<div class="section-title" style="margin-top:8px;">TCM / Foot Soak (泡脚)</div>` + rec.tcm.map(t => `<div class="meta">• ${t.name} — ${t.portion}</div>`).join(""));
+  }
+  parts.push(`<div class="meta" style="margin-top:8px;font-style:italic;">Rule-based from conditions typed in "Update Body Info" — not a live AI call. Always confirm with a doctor.</div>`);
+  el.innerHTML = parts.join("");
 }
 
 async function renderFoodExclusions(containerId, excludedList) {
@@ -151,8 +177,10 @@ function openUpdatePerson() {
     document.getElementById("up_height").value = p.height_cm || "";
     document.getElementById("up_weight").value = p.weight_kg || "";
     document.getElementById("up_age").value = p.age || "";
+    document.getElementById("up_goal_type").value = p.goal_type || "maintain";
     document.getElementById("up_goal").value = p.goal_weight_kg || "";
     document.getElementById("up_goal_date").value = p.goal_date || "";
+    document.getElementById("up_bodyproblems").value = p.body_problems || "";
     let excluded = [];
     try { excluded = JSON.parse(p.excluded_foods || "[]"); } catch (e) {}
     await renderFoodExclusions("up_foodExclusions", excluded);
@@ -164,12 +192,14 @@ async function submitPersonUpdate() {
   const height_cm = document.getElementById("up_height").value;
   const weight_kg = document.getElementById("up_weight").value;
   const age = document.getElementById("up_age").value;
+  const goal_type = document.getElementById("up_goal_type").value;
   const goal_weight_kg = document.getElementById("up_goal").value || null;
   const goal_date = document.getElementById("up_goal_date").value || null;
+  const body_problems = document.getElementById("up_bodyproblems").value;
   const excluded_foods = collectExcludedFoods("up_foodExclusions");
   const people = await NEXUS.get("/api/people");
   const p = people.find(pp => pp.id === currentPersonId);
-  await NEXUS.put(`/api/people/${currentPersonId}`, { ...p, height_cm, weight_kg, age, goal_weight_kg, goal_date, excluded_foods });
+  await NEXUS.put(`/api/people/${currentPersonId}`, { ...p, height_cm, weight_kg, age, goal_type, goal_weight_kg, goal_date, body_problems, excluded_foods });
   NEXUS.closeSheet("updatePersonSheet");
   refreshAll();
 }
@@ -369,10 +399,11 @@ async function submitWorkout() {
   const duration = document.getElementById("w_duration").value;
   const burned = document.getElementById("w_burned").value;
   const steps = document.getElementById("w_steps").value;
-  await NEXUS.post("/api/health/logs", { user_name: currentPersonName, log_type: "workout", title: "calories_burned", value: String(burned || 0) });
-  await NEXUS.post("/api/health/logs", { user_name: currentPersonName, log_type: "workout", title: workoutName, value: `${duration} min${steps ? ', ' + steps + ' steps' : ''}` });
+  const log_date = document.getElementById("w_date").value || null;
+  await NEXUS.post("/api/health/logs", { user_name: currentPersonName, log_type: "workout", title: "calories_burned", value: String(burned || 0), log_date, calories: burned || 0 });
+  await NEXUS.post("/api/health/logs", { user_name: currentPersonName, log_type: "workout", title: workoutName, value: `${duration} min`, log_date, steps });
   NEXUS.closeSheet("workoutSheet");
-  ["w_duration","w_burned","w_steps","w_othername"].forEach(id => document.getElementById(id).value = "");
+  ["w_duration","w_burned","w_steps","w_othername","w_date"].forEach(id => document.getElementById(id).value = "");
   refreshAll();
 }
 
@@ -440,12 +471,14 @@ async function submitPerson() {
     name, height_cm: document.getElementById("p_height").value, weight_kg: document.getElementById("p_weight").value,
     age: document.getElementById("p_age").value, gender: document.getElementById("p_gender").value,
     activity_level: document.getElementById("p_activity").value,
+    goal_type: document.getElementById("p_goal_type").value,
     goal_weight_kg: document.getElementById("p_goal").value || null,
     goal_date: document.getElementById("p_goal_date").value || null,
+    body_problems: document.getElementById("p_bodyproblems").value,
     excluded_foods,
   });
   NEXUS.closeSheet("personSheet");
-  ["p_name","p_height","p_weight","p_age","p_goal","p_goal_date"].forEach(id => document.getElementById(id).value = "");
+  ["p_name","p_height","p_weight","p_age","p_goal","p_goal_date","p_bodyproblems"].forEach(id => document.getElementById(id).value = "");
   currentPersonId = res.id;
   refreshAll();
 }
@@ -501,6 +534,120 @@ async function submitMealBatch() {
 async function deleteLog(id) {
   await NEXUS.del(`/api/health/logs/${id}`);
   refreshAll();
+}
+
+// ===== Daily menu with per-person checklist and unlimited ingredients =====
+let mnIngRowCount = 0;
+function addMenuIngredientRow() {
+  mnIngRowCount++;
+  const el = document.getElementById("mn_ingredientList");
+  const row = document.createElement("div");
+  row.style.cssText = "display:grid;grid-template-columns:2fr 1fr auto;gap:6px;margin-bottom:8px;align-items:center;";
+  row.innerHTML = `
+    <input type="text" class="mn-ing-name" placeholder="e.g. chicken breast" style="margin:0;" onchange="suggestMenuPortion(this)" />
+    <input type="number" class="mn-ing-grams" placeholder="grams" style="margin:0;" />
+    <button type="button" class="small secondary" onclick="this.parentElement.remove()" style="padding:8px;">✕</button>
+  `;
+  el.appendChild(row);
+}
+function resetMenuIngredients() {
+  document.getElementById("mn_ingredientList").innerHTML = "";
+  mnIngRowCount = 0;
+  addMenuIngredientRow();
+}
+
+async function suggestMenuPortion(nameInput) {
+  const name = nameInput.value.trim();
+  if (!name || !currentPersonId) return;
+  try {
+    const res = await NEXUS.get(`/api/health/menu/suggest-portion?person_id=${currentPersonId}&food_name=${encodeURIComponent(name)}`);
+    const gramsInput = nameInput.parentElement.querySelector(".mn-ing-grams");
+    if (!gramsInput.value) gramsInput.value = res.suggested_grams;
+  } catch (e) { /* food not in database — leave blank for manual entry */ }
+}
+
+async function openMenuSheet() {
+  NEXUS.closeSheet("actionSheet");
+  document.getElementById("mn_date").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("mn_name").value = "";
+  const people = await NEXUS.get("/api/people");
+  document.getElementById("mn_peopleChecklist").innerHTML = people.map(p => `
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+      <input type="checkbox" class="mn-person-check" value="${p.name}" style="width:auto;" /> ${p.name}
+    </label>
+  `).join("") || '<div class="empty">No people added yet</div>';
+  resetMenuIngredients();
+  NEXUS.openSheet("menuSheet");
+}
+
+async function submitMenu() {
+  const log_date = document.getElementById("mn_date").value;
+  const meal_slot = document.getElementById("mn_slot").value;
+  const menu_name = document.getElementById("mn_name").value.trim();
+  if (!menu_name) { alert("Enter a menu name."); return; }
+  const people = Array.from(document.querySelectorAll(".mn-person-check:checked")).map(c => c.value);
+  const ingredients = Array.from(document.querySelectorAll("#mn_ingredientList > div")).map(row => ({
+    name: row.querySelector(".mn-ing-name").value.trim(),
+    grams: row.querySelector(".mn-ing-grams").value,
+  })).filter(i => i.name);
+
+  await NEXUS.post("/api/health/menu", { log_date, meal_slot, menu_name, people, ingredients });
+  NEXUS.closeSheet("menuSheet");
+  refreshAll();
+}
+
+async function toggleMenuPersonEaten(menuId, personId, eaten) {
+  await NEXUS.put(`/api/health/menu/${menuId}/person/${personId}/eaten`, { eaten });
+  loadWeeklyMenuTable();
+}
+
+async function deleteMenu(id) {
+  if (!confirm("Delete this menu entry?")) return;
+  await NEXUS.del(`/api/health/menu/${id}`);
+  loadWeeklyMenuTable();
+}
+
+function startOfWeek(d) {
+  const date = new Date(d);
+  const day = date.getDay(); // 0=Sun
+  const diff = day === 0 ? -6 : 1 - day; // move to Monday
+  date.setDate(date.getDate() + diff);
+  return date;
+}
+
+async function loadWeeklyMenuTable() {
+  const monday = startOfWeek(new Date());
+  const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+  const dateFrom = monday.toISOString().slice(0, 10);
+  const dateTo = sunday.toISOString().slice(0, 10);
+
+  const menus = await NEXUS.get(`/api/health/menu?date_from=${dateFrom}&date_to=${dateTo}`);
+  const el = document.getElementById("weeklyMenuTable");
+  if (!menus.length) { el.innerHTML = '<div class="empty">No menus added yet this week</div>'; return; }
+
+  const byDate = {};
+  menus.forEach(m => { (byDate[m.log_date] = byDate[m.log_date] || []).push(m); });
+
+  let allChecked = true;
+  const html = Object.entries(byDate).sort().map(([date, dayMenus]) => {
+    const dayLabel = new Date(date).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+    const rows = dayMenus.map(m => {
+      const peopleHtml = m.people.map(p => {
+        if (!p.eaten) allChecked = false;
+        return `<label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" ${p.eaten ? 'checked' : ''} onchange="toggleMenuPersonEaten(${m.id},${p.id},this.checked)" style="width:auto;" /> ${p.person_name}</label>`;
+      }).join(" ");
+      return `
+        <div style="border-top:1px solid #EEE; padding-top:8px; margin-top:8px;">
+          <div class="row"><span class="label"><strong>${m.meal_slot}: ${m.menu_name}</strong></span><button class="small secondary" onclick="deleteMenu(${m.id})">✕</button></div>
+          <div class="meta">${m.ingredients.map(i => `${i.name} (${i.grams}g)`).join(', ')}</div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;">${peopleHtml}</div>
+        </div>
+      `;
+    }).join("");
+    return `<div class="card"><h3>${dayLabel}</h3>${rows}</div>`;
+  }).join("");
+
+  el.innerHTML = html + (allChecked ? `<div class="card" style="background:#DCFCE7;"><strong>✅ This week's menu is fully checked off!</strong> Add next week's menu to start a fresh table.</div>` : "");
 }
 
 NEXUS.onChange("health", refreshAll);

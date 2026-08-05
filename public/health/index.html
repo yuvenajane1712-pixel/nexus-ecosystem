@@ -84,6 +84,11 @@
     </div>
 
     <div class="card">
+      <h3>🩺 Condition-Based Recommendations</h3>
+      <div id="recommendationsBox">Loading...</div>
+    </div>
+
+    <div class="card">
       <h3>🤖 AI Coaching</h3>
       <div id="insightBox" class="meta">Loading...</div>
     </div>
@@ -91,6 +96,11 @@
     <div class="card">
       <h3>📉 Weight vs. Goal</h3>
       <div id="weightChart"><div class="empty">No weight logs yet</div></div>
+    </div>
+
+    <div class="card">
+      <h3>📅 This Week's Menu</h3>
+      <div id="weeklyMenuTable"><div class="empty">No menus added yet</div></div>
     </div>
 
     <div class="section-title">Recent Logs</div>
@@ -117,6 +127,7 @@
       <button class="action-option" onclick="openForm('metricSheet')">📊 Metric (weight, BP, HR, SpO2)</button>
       <button class="action-option" onclick="NEXUS.closeSheet('actionSheet');NEXUS.openSheet('waterSheet')">💧 Water</button>
       <button class="action-option" onclick="openForm('supplementSheet')">🌿 TCM (one-off log)</button>
+      <button class="action-option" onclick="openMenuSheet()">📅 Add Menu for the Day</button>
       <button class="action-option" onclick="openForm('grocerySheet')">🛒 Grocery purchase</button>
       <button class="action-option" onclick="openForm('personSheet')">👤 Add a person</button>
     </div>
@@ -168,6 +179,8 @@
     <div class="sheet">
       <div class="close" onclick="NEXUS.closeSheet('workoutSheet')">Close ✕</div>
       <h2>Log a Workout</h2>
+      <label>Date</label>
+      <input id="w_date" type="date" />
       <label>Activity type</label>
       <select id="w_type" onchange="toggleWorkoutOther()">
         <option>Gym — strength</option><option>Muay Thai</option><option>Swimming</option>
@@ -279,6 +292,9 @@
         <div><label>Goal weight (kg)</label><input id="p_goal" type="number" placeholder="65" /></div>
         <div><label>Goal date</label><input id="p_goal_date" type="date" /></div>
       </div>
+      <label>Health conditions / body problems to be aware of</label>
+      <textarea id="p_bodyproblems" rows="2" placeholder="e.g. PCOS, insulin resistance, hypothyroidism..."></textarea>
+      <p class="meta">We'll auto-suggest macros, workout style, supplements, and TCM/foot-soak ingredients based on what you type here — save the person first, then check the Recommendations card.</p>
       <label>Foods this person doesn't eat (uncheck to exclude)</label>
       <div id="p_foodExclusions"></div>
       <button onclick="submitPerson()">Add Person</button>
@@ -306,6 +322,8 @@
       <input id="up_goal" type="number" />
       <label>Goal date (target)</label>
       <input id="up_goal_date" type="date" />
+      <label>Health conditions / body problems to be aware of</label>
+      <textarea id="up_bodyproblems" rows="2" placeholder="e.g. PCOS, insulin resistance, hypothyroidism..."></textarea>
       <label>Foods this person doesn't eat (uncheck to exclude)</label>
       <div id="up_foodExclusions"></div>
       <button onclick="submitPersonUpdate()">Save</button>
@@ -336,6 +354,30 @@
       <button class="action-option" onclick="logStoolType('soft_blobs')">⑤ Soft blobs, clear edges</button>
       <button class="action-option" onclick="logStoolType('loose')">⑥ Loose, mushy pieces</button>
       <button class="action-option" onclick="logStoolType('diarrhea')">⑦ Watery, no solid pieces (diarrhea)</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="menuSheet">
+    <div class="sheet">
+      <div class="close" onclick="NEXUS.closeSheet('menuSheet')">Close ✕</div>
+      <h2>Add Menu for the Day</h2>
+      <label>Date</label>
+      <input id="mn_date" type="date" />
+      <label>Meal</label>
+      <select id="mn_slot">
+        <option value="breakfast">Breakfast</option>
+        <option value="lunch">Lunch</option>
+        <option value="dinner">Dinner</option>
+        <option value="snack">Snack</option>
+      </select>
+      <label>What menu do you want?</label>
+      <input id="mn_name" placeholder="e.g. Baked Salmon" />
+      <label>Who eats this? (check all that apply)</label>
+      <div id="mn_peopleChecklist"></div>
+      <label style="margin-top:10px;">Ingredients (unlimited list)</label>
+      <div id="mn_ingredientList"></div>
+      <button class="small secondary" type="button" onclick="addMenuIngredientRow()">+ Add ingredient</button>
+      <button style="margin-top:10px;" onclick="submitMenu()">Save Menu</button>
     </div>
   </div>
 

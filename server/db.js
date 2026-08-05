@@ -398,6 +398,20 @@ try { db.exec("ALTER TABLE tours ADD COLUMN destinations TEXT"); } catch (e) {}
 
 // Health: per-person excluded foods (X out proteins/carbs they don't eat)
 try { db.exec("ALTER TABLE people ADD COLUMN excluded_foods TEXT DEFAULT '[]'"); } catch (e) {}
+
+// Weekly menu planner
+db.exec(`
+CREATE TABLE IF NOT EXISTS weekly_menus (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  week_start TEXT,          -- Monday's date, YYYY-MM-DD
+  day_of_week INTEGER,      -- 0=Mon .. 6=Sun
+  meal_slot TEXT,           -- breakfast | lunch | dinner
+  menu_name TEXT,
+  participants_json TEXT DEFAULT '[]',
+  ingredients_json TEXT DEFAULT '[]',   -- [{name, grams}]
+  created_at TEXT DEFAULT (datetime('now'))
+);
+`);
 try { db.exec("ALTER TABLE people ADD COLUMN goal_type TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE supplement_checklist ADD COLUMN taken_time TEXT"); } catch (e) {}
 
@@ -480,6 +494,37 @@ try { db.exec("ALTER TABLE clients ADD COLUMN email TEXT"); } catch (e) {}
 // logistics provider selection for invoices (Track A and Track B)
 try { db.exec("ALTER TABLE orders ADD COLUMN logistics_id INTEGER"); } catch (e) {}
 try { db.exec("ALTER TABLE track_b_orders ADD COLUMN logistics_id INTEGER"); } catch (e) {}
+
+// Health: body conditions + goal type, feeding into the recommendation engine
+try { db.exec("ALTER TABLE people ADD COLUMN body_problems TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE people ADD COLUMN goal_type TEXT"); } catch (e) {}
+
+// Daily menu planning: unlimited ingredients, per-person checklist, weekly grocery aggregation
+db.exec(`
+CREATE TABLE IF NOT EXISTS daily_menus (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  log_date TEXT,
+  meal_slot TEXT,          -- breakfast | lunch | dinner | snack
+  menu_name TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS menu_people (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  menu_id INTEGER,
+  person_name TEXT,
+  eaten INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS menu_ingredients (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  menu_id INTEGER,
+  name TEXT,
+  grams REAL DEFAULT 0
+);
+`);
+
+// allow explicit log_date on health_logs (for backdating workouts etc.), defaults to now via app logic
+try { db.exec("ALTER TABLE health_logs ADD COLUMN log_date TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE health_logs ADD COLUMN steps INTEGER"); } catch (e) {}
 
 // People: weight goal + target date, water target
 try { db.exec("ALTER TABLE people ADD COLUMN goal_weight_kg REAL"); } catch (e) {}
